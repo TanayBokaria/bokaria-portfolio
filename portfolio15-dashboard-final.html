@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>Prashant Bokaria Family Portfolio</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#0d0f14;--surface:#13161e;--surface2:#1a1e2a;--border:#232839;
+    --accent:#c8a96e;--accent2:#7eb8a4;--text:#e8e6e0;--text-muted:#7a7e8e;--text-dim:#4a4f62;
+    --green:#5cb88a;--red:#e07b6a;
+    --prashant:#c8a96e;--shalini:#7eb8a4;--tanay:#9b8ec4;--tanvi:#e07b6a;--huf:#c8a96e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+
+  .header{padding:26px 40px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between;position:sticky;top:0;z-index:100;background:var(--bg);}
+  .header-left h1{font-family:'DM Serif Display',serif;font-size:26px;letter-spacing:-0.5px;}
+  .header-left .subtitle{font-size:11px;color:var(--text-muted);font-family:'DM Mono',monospace;margin-top:4px;letter-spacing:0.5px;}
+  .header-right{display:flex;align-items:center;gap:10px;}
+
+  .sheets-pill{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:11px;font-family:'DM Mono',monospace;color:var(--text-muted);cursor:pointer;transition:border-color 0.2s;}
+  .sheets-pill:hover{border-color:var(--accent);}
+  .sheets-pill.connected{border-color:rgba(92,184,138,0.4);color:var(--green);}
+  .sheets-pill.error{border-color:rgba(224,123,106,0.4);color:var(--red);}
+  .sheets-dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .sheets-dot.live{animation:pulse 2s ease-in-out infinite;}
+
+  .last-updated{font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted);background:var(--surface2);border:1px solid var(--border);padding:5px 12px;border-radius:6px;}
+  .refresh-btn{background:var(--accent);color:#0d0f14;border:none;padding:8px 16px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity 0.2s;}
+  .refresh-btn:hover{opacity:0.85;}
+  .refresh-btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .spin{animation:spin 1s linear infinite;}
+  @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(13,15,20,0.87);backdrop-filter:blur(6px);z-index:500;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+  .modal-overlay.visible{opacity:1;pointer-events:all;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:30px;width:520px;max-width:95vw;}
+  .modal h2{font-family:'DM Serif Display',serif;font-size:20px;margin-bottom:6px;}
+  .modal p{font-size:12px;color:var(--text-muted);margin-bottom:18px;line-height:1.6;}
+  .modal-field{margin-bottom:12px;}
+  .modal-label{font-size:10px;font-family:'DM Mono',monospace;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.6px;display:block;margin-bottom:5px;}
+  .modal-input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;}
+  .modal-input:focus{outline:none;border-color:var(--accent);}
+  .modal-actions{display:flex;gap:10px;margin-top:18px;}
+  .btn-primary{flex:1;background:var(--accent);color:#0d0f14;border:none;padding:10px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;}
+  .btn-secondary{flex:1;background:var(--surface2);color:var(--text-muted);border:1px solid var(--border);padding:10px;border-radius:7px;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;}
+  .modal-hint{font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.7;border-top:1px solid var(--border);padding-top:14px;}
+  .modal-hint a{color:var(--accent);text-decoration:none;}
+  .modal-status{margin-top:10px;padding:9px 12px;border-radius:7px;font-size:12px;border:1px solid var(--border);background:var(--surface2);display:none;}
+
+  .main{padding:26px 40px;max-width:1400px;margin:0 auto;}
+  .summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden;}
+  .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);}
+  .stat-card.green::before{background:var(--green);}
+  .stat-card.teal::before{background:var(--accent2);}
+  .stat-card.purple::before{background:var(--tanay);}
+  .stat-label{font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:7px;}
+  .stat-value{font-family:'DM Serif Display',serif;font-size:24px;color:var(--text);line-height:1;}
+  .stat-sub{font-size:11px;margin-top:5px;}
+  .stat-sub.gain{color:var(--green);}
+  .stat-sub.loss{color:var(--red);}
+
+  .members-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px;}
+  .member-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:15px;cursor:pointer;transition:border-color 0.2s,transform 0.2s;}
+  .member-card:hover,.member-card.active{border-color:var(--accent);transform:translateY(-2px);}
+  .member-card.active{background:var(--surface2);}
+  .member-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .member-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'DM Serif Display',serif;font-size:12px;color:#0d0f14;font-weight:bold;flex-shrink:0;}
+  .member-name{font-size:12px;font-weight:600;}
+  .member-tag{font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;}
+
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:22px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .panel-header{padding:13px 17px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+  .panel-title{font-family:'DM Serif Display',serif;font-size:15px;}
+  .panel-badge{font-family:'DM Mono',monospace;font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);padding:3px 8px;border-radius:4px;}
+  .panel-body{padding:16px;}
+  .chart-container{position:relative;height:205px;}
+
+  .holdings-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .holdings-table thead th{padding:9px 12px;text-align:left;font-size:10px;font-family:'DM Mono',monospace;color:var(--text-muted);letter-spacing:0.6px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .holdings-table tbody tr{border-bottom:1px solid var(--border);transition:background 0.15s;}
+  .holdings-table tbody tr:hover{background:var(--surface2);}
+  .holdings-table tbody tr:last-child{border-bottom:none;}
+  .holdings-table td{padding:9px 12px;vertical-align:middle;}
+  .fund-name{font-weight:500;font-size:13px;line-height:1.3;}
+  .fund-house{display:inline-block;font-size:10px;font-family:'DM Mono',monospace;color:var(--text-muted);background:var(--surface2);padding:2px 5px;border-radius:3px;margin-top:2px;}
+  .amount{font-family:'DM Mono',monospace;font-size:12px;}
+  .gain-text{color:var(--green);}
+  .loss-text{color:var(--red);}
+  .tag{display:inline-block;font-size:10px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:3px;border:1px solid;}
+  .tag-equity{color:var(--green);border-color:rgba(92,184,138,0.3);background:rgba(92,184,138,0.07);}
+  .tag-debt{color:var(--accent2);border-color:rgba(126,184,164,0.3);background:rgba(126,184,164,0.07);}
+  .tag-aif{color:var(--tanay);border-color:rgba(155,142,196,0.3);background:rgba(155,142,196,0.07);}
+  .tag-hybrid{color:var(--accent);border-color:rgba(200,169,110,0.3);background:rgba(200,169,110,0.07);}
+  .status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;vertical-align:middle;}
+  .live-dot{background:var(--green);animation:pulse 2s ease-in-out infinite;}
+  .manual-dot{background:var(--accent);}
+  .member-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;}
+
+  .filter-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+  .filter-tab{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);transition:all 0.15s;}
+  .filter-tab.active,.filter-tab:hover{background:var(--surface2);border-color:var(--accent);color:var(--text);}
+
+  .nav-status-row{display:flex;align-items:center;padding:8px 13px;border-bottom:1px solid var(--border);}
+  .nav-status-row:last-child{border-bottom:none;}
+  .nav-name{flex:1;min-width:0;}
+  .nav-name-text{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .nav-date{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);}
+  .nav-value{font-family:'DM Mono',monospace;font-size:12px;margin:0 12px;color:var(--text);min-width:68px;text-align:right;}
+
+  .drop-zone{border:2px dashed var(--border);border-radius:10px;padding:22px 14px;text-align:center;cursor:pointer;transition:border-color 0.2s;margin-bottom:12px;}
+  .drop-zone:hover{border-color:var(--accent2);}
+  .manual-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);}
+  .manual-row:last-child{border-bottom:none;}
+  .manual-fund-name{flex:1;font-size:11px;}
+  .manual-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:120px;text-align:right;}
+  .manual-input:focus{outline:none;border-color:var(--accent);}
+
+  .log-row{padding:8px 13px;border-bottom:1px solid var(--border);font-size:11px;}
+  .log-row:last-child{border-bottom:none;}
+
+  .loading-overlay{position:fixed;inset:0;background:rgba(13,15,20,0.8);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+  .loading-overlay.visible{opacity:1;pointer-events:all;}
+  .loading-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px 36px;text-align:center;}
+  .loading-spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;margin:0 auto 12px;animation:spin 1s linear infinite;}
+  .loading-text{font-size:14px;color:var(--text-muted);}
+  .loading-sub{font-size:11px;color:var(--text-dim);margin-top:3px;font-family:'DM Mono',monospace;}
+  .table-scroll{overflow-x:auto;}
+  ::-webkit-scrollbar{width:5px;height:5px;}
+  ::-webkit-scrollbar-track{background:var(--bg);}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+  select.modal-input{cursor:pointer;}
+  select.modal-input option{background:var(--surface);}
+
+  .delete-btn{background:none;border:none;cursor:pointer;color:var(--text-dim);padding:4px 6px;border-radius:5px;transition:color 0.15s,background 0.15s;font-size:14px;line-height:1;}
+  .delete-btn:hover{color:var(--red);background:rgba(224,123,106,0.1);}
+
+  /* ── TABLET (≤1100px) ── */
+  @media(max-width:1100px){
+    .summary-grid{grid-template-columns:repeat(2,1fr);}
+    .members-grid{grid-template-columns:repeat(3,1fr);}
+    .two-col{grid-template-columns:1fr;}
+  }
+
+  /* ── MOBILE (≤600px) ── */
+  @media(max-width:600px){
+    /* Layout */
+    .main{padding:12px;}
+
+    /* Header — stack vertically, hide less critical elements */
+    .header{padding:12px 14px;flex-direction:column;align-items:flex-start;gap:10px;position:relative;}
+    .header-left h1{font-size:20px;}
+    .header-left .subtitle{font-size:10px;}
+    .header-right{width:100%;display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
+    .sheets-pill{font-size:10px;padding:4px 9px;}
+    .last-updated{font-size:10px;padding:4px 9px;flex:1;}
+    .refresh-btn{font-size:12px;padding:7px 12px;}
+
+    /* Summary cards — 2 per row */
+    .summary-grid{grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+    .stat-card{padding:13px 14px;}
+    .stat-value{font-size:18px;}
+    .stat-label{font-size:9px;}
+    .stat-sub{font-size:10px;}
+
+    /* Member cards — 2 per row, compact */
+    .members-grid{grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px;}
+    .member-card{padding:12px;}
+    .member-avatar{width:26px;height:26px;font-size:10px;}
+    .member-name{font-size:11px;}
+    .member-tag{font-size:9px;}
+
+    /* Charts — full width, taller for readability */
+    .two-col{gap:12px;margin-bottom:14px;}
+    .chart-container{height:200px;}
+    .panel-title{font-size:14px;}
+
+    /* Holdings table — horizontally scrollable, readable font */
+    .panel{border-radius:10px;}
+    .holdings-table{font-size:12px;}
+    .holdings-table thead th{font-size:9px;padding:8px 10px;}
+    .holdings-table td{padding:8px 10px;}
+    .fund-name{font-size:12px;}
+    .fund-house{font-size:9px;}
+
+    /* Hide less critical columns on mobile */
+    /* Cols: 1=OrigName 2=CurrName 3=Investor 4=Type 5=Invested 6=CurrVal 7=NAV 8=Gain 9=Held 10=CAGR 11=Source 12=Delete */
+    .holdings-table th:nth-child(2),   /* Current Name */
+    .holdings-table td:nth-child(2),
+    .holdings-table th:nth-child(7),   /* NAV */
+    .holdings-table td:nth-child(7),
+    .holdings-table th:nth-child(9),   /* Held */
+    .holdings-table td:nth-child(9),
+    .holdings-table th:nth-child(10),  /* CAGR */
+    .holdings-table td:nth-child(10),
+    .holdings-table th:nth-child(11),  /* Source */
+    .holdings-table td:nth-child(11),
+    .holdings-table th:nth-child(12),  /* Delete */
+    .holdings-table td:nth-child(12){display:none;}
+
+    /* Filter tabs — wrap nicely */
+    .filter-tabs{gap:5px;margin-bottom:12px;}
+    .filter-tab{font-size:11px;padding:4px 10px;}
+
+    /* Update values panel */
+    .manual-input{width:100px;font-size:11px;}
+
+    /* Add new fund button */
+    .main > div:last-child{justify-content:stretch;}
+    .main > div:last-child button{width:100%;justify-content:center;}
+
+    /* Bottom panels — stack */
+    .panel-body{padding:12px;}
+
+    /* Modals — full screen on mobile */
+    .modal{width:95vw;padding:20px;max-height:85vh;overflow-y:auto;}
+    .modal h2{font-size:17px;}
+    .modal-actions{flex-direction:column;}
+    .btn-primary,.btn-secondary{width:100%;}
+    .modal-hint{font-size:10px;}
+
+    /* Add new fund modal grid — single column */
+    #addFundModal .modal > div[style*="grid"]{grid-template-columns:1fr !important;}
+    #addFundModal .modal-field[style*="grid-column"]{grid-column:1 !important;}
+  }
+
+  /* ── VERY SMALL (≤380px) ── */
+  @media(max-width:380px){
+    .summary-grid{grid-template-columns:1fr;}
+    .members-grid{grid-template-columns:1fr 1fr;}
+    .stat-value{font-size:16px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-card">
+    <div class="loading-spinner"></div>
+    <div class="loading-text" id="loadingText">Fetching NAVs</div>
+    <div class="loading-sub" id="loadingStatus">Connecting...</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="sheetsModal">
+  <div class="modal">
+    <h2>Connect Google Sheets</h2>
+    <p>Your Sheet ID and Client ID are pre-configured. Just click <strong>Connect &amp; Sign In with Google</strong> below — you only need to do this once per browser.</p>
+    <div class="modal-field">
+      <label class="modal-label">Google Sheet ID</label>
+      <input class="modal-input" id="sheetIdInput" placeholder="Paste your Sheet ID here">
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px">From the sheet URL: docs.google.com/spreadsheets/d/<strong style="color:var(--accent)">SHEET_ID</strong>/edit</div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Google OAuth 2.0 Client ID</label>
+      <input class="modal-input" id="clientIdInput" placeholder="xxxxxxxx.apps.googleusercontent.com">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="connectSheets()">Connect &amp; Sign In with Google</button>
+      <button class="btn-secondary" onclick="closeModal('sheetsModal')">Cancel</button>
+    </div>
+    <div class="modal-status" id="sheetsModalStatus"></div>
+    <div class="modal-hint">
+      <strong>One-time setup (5–10 minutes):</strong><br>
+      1. <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> → New Project → Enable <strong>Google Sheets API</strong><br>
+      2. APIs &amp; Services → Credentials → Create OAuth 2.0 Client ID (Web Application)<br>
+      3. Add your hosted URL to <strong>Authorised JavaScript Origins</strong><br>
+      4. Create a Google Sheet · Add tab named <strong>pms_aif_values</strong><br>
+      &nbsp;&nbsp;&nbsp;Headers: <strong>id | fund | investor | investedToDate | currentValue | asOfDate | updatedBy | notes</strong><br>
+      5. Share the sheet with your accountant's Google account (Viewer is enough)<br>
+      See the <strong>Setup Guide</strong> file for step-by-step screenshots.
+    </div>
+  </div>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <h1>Prashant Bokaria Family Portfolio</h1>
+    <div class="subtitle">44 HOLDINGS &nbsp;·&nbsp; 5 INVESTORS &nbsp;·&nbsp; AS AT <span id="headerDate">—</span></div>
+  </div>
+  <div class="header-right">
+    <div class="sheets-pill" id="sheetsPill" onclick="openModal('sheetsModal')" title="Click to configure Google Sheets sync">
+      <span class="sheets-dot" id="sheetsDot"></span>
+      <span id="sheetsStatusLabel">Sheets: Not connected</span>
+    </div>
+    <div class="last-updated">Updated: <span id="lastUpdatedTime">—</span></div>
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshNAVs()">
+      <svg id="refreshIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+      Refresh NAVs
+    </button>
+  </div>
+</header>
+
+<main class="main">
+  <div class="summary-grid">
+    <div class="stat-card"><div class="stat-label">Total Invested</div><div class="stat-value" id="totalInvested">—</div><div class="stat-sub" style="color:var(--text-muted)">Across 44 holdings</div></div>
+    <div class="stat-card teal"><div class="stat-label">Current Value</div><div class="stat-value" id="totalCurrent">—</div><div class="stat-sub" id="totalGainAmt">—</div></div>
+    <div class="stat-card green"><div class="stat-label">Overall Return</div><div class="stat-value" id="totalReturn">—</div><div class="stat-sub" style="color:var(--text-muted)">Absolute since inception</div></div>
+    <div class="stat-card purple"><div class="stat-label">Data Freshness</div><div class="stat-value" id="navCoverage">—</div><div class="stat-sub" id="sheetsSyncStatus" style="color:var(--text-muted)">MF: live · PMS/AIF: Feb 2026</div></div>
+  </div>
+
+  <div class="members-grid" id="memberCards"></div>
+
+  <div class="two-col">
+    <div class="panel"><div class="panel-header"><div class="panel-title">By Investor</div><div class="panel-badge">CURRENT VALUE</div></div><div class="panel-body"><div class="chart-container"><canvas id="memberChart"></canvas></div></div></div>
+    <div class="panel"><div class="panel-header"><div class="panel-title">By Asset Class</div><div class="panel-badge">CURRENT VALUE</div></div><div class="panel-body"><div class="chart-container"><canvas id="categoryChart"></canvas></div></div></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:22px">
+    <div class="panel-header"><div class="panel-title">All Holdings</div><div id="tableCount" class="panel-badge">44 FUNDS</div></div>
+    <div class="panel-body" style="padding-bottom:8px">
+      <div class="filter-tabs">
+        <button class="filter-tab active" onclick="filterTable('all',this)">All Members</button>
+        <button class="filter-tab" onclick="filterTable('Prashant Bokaria',this)"><span class="member-dot" style="background:var(--prashant)"></span>Prashant</button>
+        <button class="filter-tab" onclick="filterTable('Shalini Bokaria',this)"><span class="member-dot" style="background:var(--shalini)"></span>Shalini</button>
+        <button class="filter-tab" onclick="filterTable('Tanay Bokaria',this)"><span class="member-dot" style="background:var(--tanay)"></span>Tanay</button>
+        <button class="filter-tab" onclick="filterTable('Tanvi Bokaria',this)"><span class="member-dot" style="background:var(--tanvi)"></span>Tanvi</button>
+        <button class="filter-tab" onclick="filterTable('Prashant Bokaria HUF',this)"><span class="member-dot" style="background:var(--huf)"></span>HUF</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="holdings-table">
+        <thead><tr>
+          <th>Original Fund Name</th><th>Current Fund Name</th><th>Investor</th><th>Type</th>
+          <th style="text-align:right">Invested</th><th style="text-align:right">Current Value</th>
+          <th style="text-align:right">NAV</th>
+          <th style="text-align:right">Gain / Loss</th><th style="text-align:right">Held</th>
+          <th style="text-align:right">CAGR</th><th style="text-align:center">Source</th>
+          <th style="text-align:center"></th>
+        </tr></thead>
+        <tbody id="holdingsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Update Values</div>
+        <div class="panel-badge">PMS / AIF</div>
+      </div>
+      <div class="panel-body">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Enter the latest figures from your statements. For drawdown investments, update the invested amount to reflect what has actually been called so far.</p>
+        <div id="manualUpdateList"></div>
+        <button class="refresh-btn" style="margin-top:12px;width:100%;justify-content:center" onclick="applyManualUpdates()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save Values
+        </button>
+        <div id="manualStatus" style="display:none;margin-top:10px;padding:9px 12px;border-radius:7px;font-size:12px;border:1px solid var(--border);background:var(--surface2)"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="panel" style="flex:1">
+        <div class="panel-header"><div class="panel-title">Live NAV Feed</div><div class="panel-badge">AMFI · MFAPI</div></div>
+        <div style="max-height:220px;overflow-y:auto" id="navFeedList"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">Update Log</div><div class="panel-badge" id="logBadge">SHEETS</div></div>
+        <div style="max-height:150px;overflow-y:auto" id="updateLog">
+          <div style="padding:14px;font-size:12px;color:var(--text-dim);text-align:center">Connect Google Sheets to see update history</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD NEW FUND BUTTON -->
+  <div style="display:flex;justify-content:flex-end;margin-bottom:22px">
+    <button class="refresh-btn" style="background:var(--surface2);border:1px solid var(--accent);color:var(--accent)" onclick="openModal('addFundModal')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add New Fund
+    </button>
+  </div>
+
+  <!-- NYSE HOLDINGS -->
+  <div class="panel" style="margin-bottom:40px">
+    <div class="panel-header">
+      <div class="panel-title">NYSE Holdings</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div id="fxPill" style="font-family:'DM Mono',monospace;font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);padding:3px 10px;border-radius:4px">USD/INR: —</div>
+        <div class="panel-badge" id="nyseCount">— STOCKS</div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding-bottom:8px">
+      <div class="filter-tabs" id="nyseFilter">
+        <button class="filter-tab active" onclick="filterNYSE('all',this)">All Members</button>
+        <button class="filter-tab" onclick="filterNYSE('Prashant Bokaria',this)"><span class="member-dot" style="background:var(--prashant)"></span>Prashant</button>
+        <button class="filter-tab" onclick="filterNYSE('Shalini Bokaria',this)"><span class="member-dot" style="background:var(--shalini)"></span>Shalini</button>
+        <button class="filter-tab" onclick="filterNYSE('Tanvi Bokaria',this)"><span class="member-dot" style="background:var(--tanvi)"></span>Tanvi</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="holdings-table" id="nyseTable">
+        <thead><tr>
+          <th>Stock</th><th>Investor</th><th>Platform</th>
+          <th style="text-align:right">Qty</th>
+          <th style="text-align:right">Avg Cost (USD)</th>
+          <th style="text-align:right">Live Price (USD)</th>
+          <th style="text-align:right">Value (USD)</th>
+          <th style="text-align:right">Value (INR)</th>
+          <th style="text-align:right">Gain / Loss (USD)</th>
+        </tr></thead>
+        <tbody id="nyseBody">
+          <tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-dim);font-size:12px">Click Refresh NAVs to load live stock prices</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <!-- NYSE Summary footer -->
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:24px;flex-wrap:wrap;font-size:12px">
+      <div><span style="color:var(--text-muted)">Total Invested: </span><span id="nyseTotalInvested" style="font-family:'DM Mono',monospace">—</span></div>
+      <div><span style="color:var(--text-muted)">Current Value (USD): </span><span id="nyseTotalUSD" style="font-family:'DM Mono',monospace">—</span></div>
+      <div><span style="color:var(--text-muted)">Current Value (INR): </span><span id="nyseTotalINR" style="font-family:'DM Mono',monospace;font-weight:600">—</span></div>
+      <div><span style="color:var(--text-muted)">Overall Gain (USD): </span><span id="nyseTotalGain" style="font-family:'DM Mono',monospace">—</span></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ADD NEW FUND MODAL -->
+<div class="modal-overlay" id="addFundModal">
+  <div class="modal" style="width:600px;max-height:90vh;overflow-y:auto">
+    <h2>Add New Fund</h2>
+    <p>Fill in the details from the account statement or investment confirmation. Fields marked * are required.</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+
+      <div class="modal-field" style="grid-column:1/-1">
+        <label class="modal-label">Fund Name *</label>
+        <input class="modal-input" id="nf_fund" placeholder="e.g. Nippon India Small Cap Fund - Direct Growth">
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Fund House / AMC *</label>
+        <input class="modal-input" id="nf_house" placeholder="e.g. Nippon, HDFC, ICICI, Girik">
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Folio / Account No.</label>
+        <input class="modal-input" id="nf_folio" placeholder="e.g. 402228905024">
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Investor *</label>
+        <select class="modal-input" id="nf_investor">
+          <option value="">— Select —</option>
+          <option value="Prashant Bokaria">Prashant Bokaria</option>
+          <option value="Shalini Bokaria">Shalini Bokaria</option>
+          <option value="Tanay Bokaria">Tanay Bokaria</option>
+          <option value="Tanvi Bokaria">Tanvi Bokaria</option>
+          <option value="Prashant Bokaria HUF">Prashant Bokaria HUF</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Fund Type *</label>
+        <select class="modal-input" id="nf_type" onchange="handleNewFundTypeChange(this.value)">
+          <option value="">— Select —</option>
+          <option value="MF">Mutual Fund (MF)</option>
+          <option value="PMS">PMS</option>
+          <option value="AIF">AIF</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Category *</label>
+        <select class="modal-input" id="nf_category">
+          <option value="">— Select —</option>
+          <option value="Equity">Equity</option>
+          <option value="Debt">Debt</option>
+          <option value="Hybrid">Hybrid</option>
+          <option value="EQ-Debt Tax">EQ-Debt Tax</option>
+          <option value="Debt-Others">Debt-Others</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Amount Invested (₹) *</label>
+        <input class="modal-input" id="nf_invested" type="number" placeholder="e.g. 5000000">
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Current Value (₹) *</label>
+        <input class="modal-input" id="nf_currentValue" type="number" placeholder="e.g. 6800000">
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Purchase / First Investment Date *</label>
+        <input class="modal-input" id="nf_purchaseDate" type="date">
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label">Value As Of Date</label>
+        <input class="modal-input" id="nf_asOfDate" type="date">
+      </div>
+
+      <!-- MF-only fields, shown when type = MF -->
+      <div id="nf_mf_fields" style="display:none;grid-column:1/-1">
+        <div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;padding-top:4px">MF Details (optional but recommended)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+          <div class="modal-field">
+            <label class="modal-label">Units</label>
+            <input class="modal-input" id="nf_units" type="number" placeholder="e.g. 112678.96">
+          </div>
+          <div class="modal-field">
+            <label class="modal-label">NAV at Purchase (₹)</label>
+            <input class="modal-input" id="nf_navCost" type="number" placeholder="e.g. 76.19">
+          </div>
+          <div class="modal-field">
+            <label class="modal-label">Current NAV (₹)</label>
+            <input class="modal-input" id="nf_currentNav" type="number" placeholder="e.g. 163.12">
+          </div>
+          <div class="modal-field" style="grid-column:1/-1">
+            <label class="modal-label">AMFI Scheme Code — for live NAV auto-refresh</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="modal-input" id="nf_schemeCode" placeholder="Click Search to find automatically" style="flex:1" readonly>
+              <button class="refresh-btn" style="white-space:nowrap;font-size:12px;padding:7px 12px" onclick="searchSchemeCode()" id="schemeSearchBtn">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                Search
+              </button>
+            </div>
+            <!-- Search results dropdown -->
+            <div id="schemeSearchResults" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg)"></div>
+            <div id="schemeSearchStatus" style="font-size:11px;color:var(--text-muted);margin-top:5px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-field" style="grid-column:1/-1">
+        <label class="modal-label">Bank / Notes</label>
+        <input class="modal-input" id="nf_notes" placeholder="e.g. Kotak, or any additional notes">
+      </div>
+
+    </div>
+
+    <div id="addFundStatus" style="display:none;margin-top:10px;padding:9px 12px;border-radius:7px;font-size:12px;border:1px solid var(--border);background:var(--surface2)"></div>
+
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="addNewFund()">Add to Dashboard</button>
+      <button class="btn-secondary" onclick="resetAndCloseAddFund()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════
+// DATA
+// ═══════════════════════════════════
+const PORTFOLIO = [
+  {id:1,investor:'Prashant Bokaria',folio:'402228905024',house:'Nippon',fund:'Nippon India Small Cap Fund - Direct Growth',category:'Equity',invested:5000000,units:112678.96,navCost:76.19,currentNav:163.12,currentValue:18380191.96,type:'MF',schemeCode:'118778',purchaseDate:'2019-01-18',originalName:'Nippon India Small Cap Fund - Direct Growth',currentName:'Nippon India Small Cap Fund - Direct Plan Growth Plan'},
+  {id:2,investor:'Shalini Bokaria',folio:'405237087862',house:'Nippon',fund:'Nippon India Multi Asset Fund - Direct Growth',category:'Debt',invested:4900000,units:489975.50,navCost:10,currentNav:26.33,currentValue:12901054.94,type:'MF',schemeCode:'148457',purchaseDate:'2020-08-07',originalName:'Nippon India Multi Asset Fund - Direct Growth',currentName:'Nippon India Multi Asset Allocation Fund - Direct Plan - Growth'},
+  {id:3,investor:'Shalini Bokaria',folio:'70531383594',house:'Mirae',fund:'Mirae Asset Diversified Equity Allocator Passive FoF Direct Growth',category:'Equity',invested:4920000,units:491975.40,navCost:10,currentNav:25.32,currentValue:12456817.15,type:'MF',schemeCode:'148500',purchaseDate:'2020-09-01',originalName:'Mirae Asset Equity Allocator Fund of Fund Direct Growth',currentName:'Mirae Asset Diversified Equity Allocator Passive FOF - Direct Plan - Growth'},
+  {id:4,investor:'Shalini Bokaria',folio:'16029450/79',house:'ICICI',fund:'ICICI Prudential ESG Fund - Direct Growth',category:'Equity',invested:4940000,units:491029.16,navCost:10.06,currentNav:23.43,currentValue:11504813.22,type:'MF',schemeCode:'148516',purchaseDate:'2020-10-01',originalName:'ICICI Prudential ESG Fund - Direct Growth',currentName:'ICICI Prudential ESG Exclusionary Strategy Fund - Direct Plan - Growth'},
+  {id:5,investor:'Shalini Bokaria',folio:'70539935263',house:'Mirae',fund:'Mirae Asset NYSE FANG+ ETF FoF Direct Growth',category:'Debt-Others',invested:4920000,units:491975.40,navCost:10,currentNav:35.29,currentValue:17361811.90,type:'MF',schemeCode:'148928',purchaseDate:'2021-04-20',originalName:'Mirae Asset NYSE FANG+ETF Fund of Fund - Direct Growth',currentName:'Mirae Asset NYSE FANG + ETF Fund of Fund Direct Growth'},
+  {id:6,investor:'Prashant Bokaria',folio:'XOF317',house:'Xponentia',fund:'Xponentia Opportunities Fund II',category:'Equity',invested:18000000,units:170,navCost:142770.30,currentNav:null,currentValue:24679981.39,type:'AIF',schemeCode:null,purchaseDate:'2023-05-01',originalName:'Xponentia Opportunities Fund II',currentName:'Xponentia Opportunities Fund II'},
+  {id:7,investor:'Prashant Bokaria',folio:'100763',house:'Girik',fund:'Girik Wealth Advisors Pvt. Ltd (PMS)',category:'PMS',invested:20000000,units:null,navCost:null,currentNav:null,currentValue:23840953,type:'PMS',schemeCode:null,purchaseDate:'2023-10-11',originalName:'Girik Wealth Advisors Pvt. Ltd (PMS)',currentName:'Girik Wealth Advisors Pvt. Ltd (PMS)'},
+  {id:8,investor:'Shalini Bokaria',folio:'100762',house:'Girik',fund:'Girik Wealth Advisors Pvt. Ltd (PMS)',category:'PMS',invested:17500000,units:null,navCost:null,currentNav:null,currentValue:20113261,type:'PMS',schemeCode:null,purchaseDate:'2023-10-11',originalName:'Girik Wealth Advisors Pvt. Ltd (PMS)',currentName:'Girik Wealth Advisors Pvt. Ltd (PMS)'},
+  {id:9,investor:'Tanvi Bokaria',folio:'100765',house:'Girik',fund:'Girik Wealth Advisors Pvt. Ltd (PMS)',category:'PMS',invested:7500000,units:null,navCost:null,currentNav:null,currentValue:8979258,type:'PMS',schemeCode:null,purchaseDate:'2023-10-15',originalName:'Girik Wealth Advisors Pvt. Ltd (PMS)',currentName:'Girik Wealth Advisors Pvt. Ltd (PMS)'},
+  {id:10,investor:'Prashant Bokaria',folio:'13523828',house:'Kotak',fund:'Kotak Equity Opportunities Fund - Direct Growth',category:'Equity',invested:4901000,units:17837.60,navCost:274.74,currentNav:403.19,currentValue:7191940.73,type:'MF',schemeCode:'120158',purchaseDate:'2023-11-21',originalName:'Kotak Equity Opportunities Fund - Direct Growth',currentName:'Kotak Large & Midcap Fund - Direct Growth'},
+  {id:11,investor:'Prashant Bokaria',folio:'3052',house:'Incred',fund:'Incred Equity Advantage Fund-I',category:'Equity',invested:10000000,units:9689.41,navCost:1130.21,currentNav:1112.82,currentValue:10782612.84,type:'AIF',schemeCode:null,purchaseDate:'2023-11-30',originalName:'Incred Equity Advantage Fund-I',currentName:'Incred Equity Advantage Fund-I'},
+  {id:12,investor:'Prashant Bokaria',folio:'405313117992',house:'Nippon',fund:'Nippon India Large Cap Fund - Direct Growth',category:'Equity',invested:2500000,units:31010.24,navCost:80.61,currentNav:103.85,currentValue:3220531.26,type:'MF',schemeCode:'118632',purchaseDate:'2024-01-25',originalName:'Nippon India Large Cap Fund - Direct Growth',currentName:'Nippon India Large Cap Fund - Direct Plan Growth Plan'},
+  {id:13,investor:'Prashant Bokaria',folio:'34642279/30',house:'ICICI',fund:'ICICI Prudential Energy Opportunities Fund - Direct Growth',category:'Equity',invested:4965000,units:496475.18,navCost:10,currentNav:10.56,currentValue:5242777.86,type:'MF',schemeCode:'152728',purchaseDate:'2024-07-28',originalName:'ICICI Prudential Energy Opportunities Fund - Direct Growth',currentName:'ICICI Prudential Energy Opportunities Fund - Direct Plan - Growth'},
+  {id:14,investor:'Shalini Bokaria',folio:'4553379/82',house:'Kotak',fund:'Kotak Opportunities Fund - Direct Growth',category:'Equity',invested:7734267,units:63696.36,navCost:117.29,currentNav:409.33,currentValue:26072830.22,type:'MF',schemeCode:'120158',purchaseDate:'2018-06-01',originalName:'Kotak Opportunities Fund - Direct Growth',currentName:'Kotak Large & Midcap Fund - Direct Growth'},
+  {id:15,investor:'Shalini Bokaria',folio:'90512131031',house:'Motilal',fund:'Motilal Oswal Nasdaq 100 FoF - Growth',category:'EQ-Debt Tax',invested:8000000,units:800000,navCost:10,currentNav:48.35,currentValue:38680000,type:'MF',schemeCode:'145552',purchaseDate:'2018-11-22',originalName:'Motilal Oswal Nasdaq 100 Fund of Fund - Growth',currentName:'Motilal Oswal Nasdaq 100 Fund of Fund - Direct Plan Growth'},
+  {id:16,investor:'Shalini Bokaria',folio:'70531385844',house:'Mirae',fund:'Mirae Asset Diversified Equity Allocator Passive FoF Direct Growth (2)',category:'Equity',invested:4940000,units:493975.30,navCost:10,currentNav:25.32,currentValue:12507454.62,type:'MF',schemeCode:'148500',purchaseDate:'2020-09-01',originalName:'Mirae Asset Equity Allocator Fund of Fund Direct Growth',currentName:'Mirae Asset Diversified Equity Allocator Passive FOF - Direct Plan - Growth'},
+  {id:17,investor:'Prashant Bokaria',folio:'16020453/07',house:'ICICI',fund:'ICICI Prudential ESG Fund - Direct Growth',category:'Equity',invested:4950000,units:493003.24,navCost:10.04,currentNav:23.43,currentValue:11551065.87,type:'MF',schemeCode:'148516',purchaseDate:'2020-10-01',originalName:'ICICI Prudential ESG Fund - Direct Growth',currentName:'ICICI Prudential ESG Exclusionary Strategy Fund - Direct Plan - Growth'},
+  {id:18,investor:'Shalini Bokaria',folio:'90519533965',house:'Motilal',fund:'Motilal Oswal Balanced Advantage Fund - Growth',category:'Equity',invested:4957000,units:376282.95,navCost:12.25,currentNav:20.28,currentValue:7631018.21,type:'MF',schemeCode:'139872',purchaseDate:'2020-10-08',originalName:'Motilal Oswal Balanced Advantage Fund - Growth',currentName:'Motilal Oswal Balanced Advantage Fund - Direct Plan - Growth'},
+  {id:19,investor:'Prashant Bokaria',folio:'24961746',house:'SBI',fund:'SBI Focused Equity Fund - Direct Growth',category:'Equity',invested:5010867,units:26106.25,navCost:4653.56,currentNav:415.26,currentValue:10840882.62,type:'MF',schemeCode:'119727',purchaseDate:'2020-10-16',originalName:'SBI Focused Equity Fund - Direct Growth',currentName:'SBI Focused Fund - Direct Plan - Growth'},
+  {id:20,investor:'Prashant Bokaria',folio:'17246964/72',house:'HDFC',fund:'HDFC Dividend Yield Fund - Direct Growth',category:'Equity',invested:4952000,units:495175.24,navCost:10,currentNav:26.35,currentValue:13047867.60,type:'MF',schemeCode:'148609',purchaseDate:'2020-11-28',originalName:'HDFC Dividend Yield Fund - Direct Growth',currentName:'HDFC Dividend Yield Fund - Growth Option Direct Plan'},
+  {id:21,investor:'Prashant Bokaria',folio:'70533593191',house:'Mirae',fund:'Mirae Asset ESG Sector Leaders FoF - Direct Growth',category:'Equity',invested:4972000,units:479713.57,navCost:10.36,currentNav:19.44,currentValue:9325631.74,type:'MF',schemeCode:'148574',purchaseDate:'2020-11-24',originalName:'Mirae Asset ESG Sector Leaders FoF - Direct Growth',currentName:'Mirae Asset Nifty 100 ESG Sector Leaders Fund of Fund Direct Growth'},
+  {id:22,investor:'Prashant Bokaria',folio:'17934235/91',house:'HDFC',fund:'HDFC Banking & Financial Services Fund - Direct Growth',category:'Equity',invested:4932000,units:493175.34,navCost:10,currentNav:19.19,currentValue:9464034.79,type:'MF',schemeCode:'148986',purchaseDate:'2021-07-15',originalName:'HDFC Banking & Financial Services Fund - Direct Growth',currentName:'HDFC Banking & Financial Services Fund - Growth Option - Direct Plan'},
+  {id:23,investor:'Tanay Bokaria',folio:'9039734401',house:'Edelweiss',fund:'Edelweiss Recently Listed IPO Fund - Direct Growth',category:'Equity',invested:4994750,units:268983.27,navCost:18.57,currentNav:26.91,currentValue:7238339.69,type:'MF',schemeCode:'142388',purchaseDate:'2021-08-11',originalName:'Edelweiss Recently Listed IPO Fund - Direct Growth',currentName:'Edelweiss Recently Listed IPO Fund Direct Plan Growth'},
+  {id:24,investor:'Shalini Bokaria',folio:'70555987896',house:'Mirae',fund:'Mirae Asset Nifty SDL Jun 2027 Index Fund - Direct Growth',category:'Debt',invested:4957000,units:495675.22,navCost:10,currentNav:12.79,currentValue:6339686.01,type:'MF',schemeCode:'150358',purchaseDate:'2022-04-12',originalName:'Mirae Asset Nifty SDL Jun 2027 Index Fund - Direct Growth',currentName:'Mirae Asset Nifty SDL Jun 2027 Index Fund - Direct Plan - Growth'},
+  {id:25,investor:'Shalini Bokaria',folio:'402265121535',house:'Nippon',fund:'Nippon India Value Fund - Direct Growth',category:'Equity',invested:4013175,units:33423.09,navCost:121.44,currentNav:251.62,currentValue:8409917.91,type:'MF',schemeCode:'118784',purchaseDate:'2022-06-10',originalName:'Nippon India Value Fund - Direct Growth',currentName:'Nippon India Value Fund - Direct Plan Growth Plan'},
+  {id:26,investor:'Shalini Bokaria',folio:'70559736595',house:'Mirae',fund:'Mirae Asset Balanced Advantage Fund - Direct Growth',category:'Equity',invested:4937000,units:493675.32,navCost:10,currentNav:14.96,currentValue:7385382.73,type:'MF',schemeCode:'150470',purchaseDate:'2022-09-12',originalName:'Mirae Asset Balanced Advantage Fund - Direct Growth',currentName:'Mirae Asset Balanced Advantage Fund Direct Plan - Growth'},
+  {id:27,investor:'Tanay Bokaria',folio:'25883138/56',house:'ICICI',fund:'ICICI Prudential Large & Mid Cap Fund - Direct Growth',category:'Equity',invested:4955000,units:7838.06,navCost:632.14,currentNav:1133.76,currentValue:8886481.17,type:'MF',schemeCode:'120596',purchaseDate:'2023-04-22',originalName:'ICICI Prudential Large & Mid Cap Fund - Direct Growth',currentName:'ICICI Prudential Large & Mid Cap Fund - Direct Plan - Growth'},
+  {id:28,investor:'Tanay Bokaria',folio:'21890430/38',house:'HDFC',fund:'HDFC Flexi Cap Fund - Direct Plan Growth',category:'Equity',invested:4965000,units:4043.45,navCost:1227.85,currentNav:2243.71,currentValue:9072340.42,type:'MF',schemeCode:'118955',purchaseDate:'2023-04-22',originalName:'HDFC Flexi Cap Fund - Direct Plan Growth',currentName:'HDFC Flexi Cap Fund - Growth Option - Direct Plan'},
+  {id:29,investor:'Tanay Bokaria',folio:'33705366',house:'Franklin',fund:'Franklin India Flexi Cap Fund - Direct Growth',category:'Equity',invested:4975000,units:4634.75,navCost:1073.36,currentNav:1814.78,currentValue:8411058.86,type:'MF',schemeCode:'118535',purchaseDate:'2023-04-22',originalName:'Franklin India Flexi Cap Fund - Direct Growth',currentName:'Franklin India Flexi Cap Fund - Direct - Growth'},
+  {id:30,investor:'Tanay Bokaria',folio:'8353230/66',house:'DSP',fund:'DSP Flexi Cap Fund - Direct Plan Growth',category:'Equity',invested:4985000,units:72492.81,navCost:68.76,currentNav:113.91,currentValue:8257656.21,type:'MF',schemeCode:'119076',purchaseDate:'2023-04-22',originalName:'DSP Flexi Cap Fund - Direct Plan Growth',currentName:'DSP Flexi Cap Fund - Direct Plan - Growth'},
+  {id:31,investor:'Tanay Bokaria',folio:'70565619846',house:'Mirae',fund:'Mirae Asset Diversified Equity Allocator Passive FoF Direct Growth',category:'Equity',invested:4995000,units:308756.28,navCost:16.18,currentNav:25.32,currentValue:7816473.86,type:'MF',schemeCode:'148500',purchaseDate:'2023-05-06',originalName:'Mirae Asset Equity Allocator FoF Direct Growth',currentName:'Mirae Asset Diversified Equity Allocator Passive FOF - Direct Plan - Growth'},
+  {id:32,investor:'Tanay Bokaria',folio:'26066694/57',house:'ICICI',fund:'ICICI Prudential Innovation Fund - Direct Growth',category:'Debt',invested:4945000,units:494475.28,navCost:10,currentNav:18.56,currentValue:9177461.12,type:'MF',schemeCode:'151580',purchaseDate:'2023-05-09',originalName:'ICICI Prudential Innovation Fund - Direct Growth',currentName:'ICICI Prudential Innovation Fund - Direct Plan - Growth'},
+  {id:33,investor:'Tanay Bokaria',folio:'8636619/07',house:'DSP',fund:'DSP Multi Asset Allocation Fund - Direct Growth',category:'Equity',invested:4901000,units:490075.50,navCost:10,currentNav:16.86,currentValue:8262672.86,type:'MF',schemeCode:'152056',purchaseDate:'2023-11-14',originalName:'DSP Multi Asset Allocation Fund - Direct Growth',currentName:'DSP Multi Asset Allocation Fund - Direct - Growth'},
+  {id:34,investor:'Tanay Bokaria',folio:'10958284446',house:'Canara',fund:'Canara Robeco Focused Equity Fund - Direct Growth',category:'Equity',invested:4902000,units:332999.65,navCost:14.72,currentNav:21.36,currentValue:7112872.61,type:'MF',schemeCode:'148883',purchaseDate:'2023-11-08',originalName:'Canara Robeco Focused Equity Fund - Direct Growth',currentName:'Canara Robeco Focused Fund - Direct Plan - Growth Option'},
+  {id:35,investor:'Tanay Bokaria',folio:'18710103',house:'Parag Parikh',fund:'Parag Parikh Conservative Hybrid Fund - Direct Growth',category:'Equity',invested:4994000,units:320028.09,navCost:15.60,currentNav:15.74,currentValue:5037242.12,type:'MF',schemeCode:'148958',purchaseDate:'2026-02-04',originalName:'Parag Parikh Conservative Hybrid Fund - Direct Growth',currentName:'Parag Parikh Conservative Hybrid Fund - Direct Plan - Growth'},
+  {id:36,investor:'Prashant Bokaria HUF',folio:'29438309/81',house:'ICICI',fund:'ICICI Prudential Value Discovery Fund - Direct Growth',category:'Equity',invested:2500000,units:6990.90,navCost:357.59,currentNav:535.18,currentValue:3741388.26,type:'MF',schemeCode:'120323',purchaseDate:'2023-11-23',originalName:'ICICI Prudential Value Discovery Fund - Direct Growth',currentName:'ICICI Prudential Value Fund (erstwhile Value Discovery Fund) - Direct Plan - Growth'},
+  {id:37,investor:'Prashant Bokaria HUF',folio:'402303669745',house:'Nippon',fund:'Nippon India Small Cap Fund - Direct Growth (STP)',category:'Equity',invested:1398923,units:9791.96,navCost:142.62,currentNav:163.12,currentValue:1597264.84,type:'MF',schemeCode:'118778',purchaseDate:'2023-11-23',originalName:'Nippon India Small Cap Fund - Direct Growth (STP)',currentName:'Nippon India Small Cap Fund - Direct Plan Growth Plan (STP)'},
+  {id:38,investor:'Prashant Bokaria',folio:'90510060242',house:'Motilal',fund:'Motilal Oswal Founders Fund Series V (AIF)',category:'AIF',invested:10800000,units:null,navCost:9.70,currentNav:null,currentValue:10800000,type:'AIF',schemeCode:null,purchaseDate:'2025-05-28',originalName:'Motilal Oswal Founders Fund Series V (AIF)',currentName:'Motilal Oswal Founders Fund Series V (AIF)'},
+  {id:39,investor:'Prashant Bokaria HUF',folio:'101035',house:'Girik',fund:'Girik Wealth Advisors Pvt. Ltd (PMS) - HUF',category:'PMS',invested:17500000,units:null,navCost:null,currentNav:null,currentValue:17696678.78,type:'PMS',schemeCode:null,purchaseDate:'2024-07-12',originalName:'Girik Wealth Advisors Pvt. Ltd (PMS) - HUF',currentName:'Girik Wealth Advisors Pvt. Ltd (PMS) - HUF'},
+  {id:40,investor:'Prashant Bokaria',folio:'16550701',house:'Parag Parikh',fund:'Parag Parikh Flexi Cap Fund - Direct Growth',category:'Equity',invested:2500000,units:31620.41,navCost:79.06,currentNav:94.19,currentValue:2978326.42,type:'MF',schemeCode:'122639',purchaseDate:'2025-04-18',originalName:'Parag Parikh Flexi Cap Fund - Direct Growth',currentName:'Parag Parikh Flexi Cap Fund - Direct Plan - Growth'},
+  {id:41,investor:'Prashant Bokaria',folio:'34140448',house:'HDFC',fund:'HDFC Focused 30 Fund - Direct Growth',category:'Equity',invested:2500000,units:12003.97,navCost:208.28,currentNav:266.95,currentValue:3204460.06,type:'MF',schemeCode:'118950',purchaseDate:'2025-04-18',originalName:'HDFC Focused 30 Fund - Direct Growth',currentName:'HDFC Focused Fund - Growth Option - Direct Plan'},
+  {id:42,investor:'Prashant Bokaria',folio:'10111',house:'Aarth',fund:'Aarth AIF Growth Fund',category:'AIF',invested:10000000,units:56538.81,navCost:0,currentNav:null,currentValue:10967741.41,type:'AIF',schemeCode:null,purchaseDate:'2025-03-26',originalName:'Aarth AIF Growth Fund',currentName:'Aarth AIF Growth Fund'},
+  {id:43,investor:'Prashant Bokaria',folio:'EIMJ0436',house:'Emkay',fund:'Emkay Investment Managers Ltd (PMS)',category:'PMS',invested:40000000,units:null,navCost:null,currentNav:null,currentValue:40000000,type:'PMS',schemeCode:null,purchaseDate:'2025-10-03',originalName:'Emkay Investment Managers Ltd (PMS)',currentName:'Emkay Investment Managers Ltd (PMS)'},
+  {id:44,investor:'Prashant Bokaria',folio:'9106948934',house:'Nippon',fund:'Nippon India Equity Opportunities AIF - Scheme 9',category:'AIF',invested:9999500,units:107101.86,navCost:100,currentNav:120,currentValue:12852223.56,type:'AIF',schemeCode:null,purchaseDate:'2024-09-10',originalName:'Nippon India Equity Opportunities AIF - Scheme 9',currentName:'Nippon India Equity Opportunities AIF - Scheme 9'},
+];
+
+const MEMBER_META = {
+  'Prashant Bokaria':{color:'#c8a96e',short:'PB',label:'Father'},
+  'Shalini Bokaria':{color:'#7eb8a4',short:'SB',label:'Mother'},
+  'Tanay Bokaria':{color:'#9b8ec4',short:'TB',label:'Son'},
+  'Tanvi Bokaria':{color:'#e07b6a',short:'TV',label:'Daughter'},
+  'Prashant Bokaria HUF':{color:'#c8a96e',short:'HUF',label:'HUF'},
+};
+const MF_NAMES = {'118778':'Nippon Small Cap','148457':'Nippon Multi Asset','148500':'Mirae Diversified Equity Allocator FoF','148516':'ICICI ESG','148928':'Mirae NYSE FANG+','120158':'Kotak Equity Opps','118632':'Nippon Large Cap','152728':'ICICI Energy Opps','145552':'Motilal Nasdaq 100','139872':'Motilal Bal Advantage','119727':'SBI Focused Equity','148609':'HDFC Dividend Yield','148574':'Mirae ESG Leaders','148986':'HDFC Banking & Fin','142388':'Edelweiss Recent IPO','150358':'Mirae Nifty SDL 2027','118784':'Nippon Value','150470':'Mirae Bal Advantage','120596':'ICICI L&M Cap','118955':'HDFC Flexi Cap','118535':'Franklin Flexi Cap','119076':'DSP Flexi Cap','151580':'ICICI Innovation','152056':'DSP Multi Asset','148883':'Canara Robeco Focused','148958':'PP Conservative Hybrid','120323':'ICICI Value Discovery','122639':'Parag Parikh Flexi Cap','118950':'HDFC Focused 30'};
+
+// ═══════════════════════════════════
+// STATE
+// ═══════════════════════════════════
+// ═══════════════════════════════════
+// NYSE HOLDINGS DATA (March 2026 statements)
+// ═══════════════════════════════════
+const NYSE_HOLDINGS = [
+  // PRASHANT — Vested/DriveWealth (VSTF-001-VSQE000426)
+  {id:'p_AMD',  investor:'Prashant Bokaria', symbol:'AMD',  name:'Advanced Micro Devices',    qty:256.5124557,  unitCost:134.89, platform:'Vested'},
+  {id:'p_AMZN', investor:'Prashant Bokaria', symbol:'AMZN', name:'Amazon',                    qty:17.48105703,  unitCost:200.22, platform:'Vested'},
+  {id:'p_ANET', investor:'Prashant Bokaria', symbol:'ANET', name:'Arista Networks',           qty:23.75781795,  unitCost:136.80, platform:'Vested'},
+  {id:'p_ARM',  investor:'Prashant Bokaria', symbol:'ARM',  name:'ARM Holdings',              qty:42.4379458,   unitCost:141.38, platform:'Vested'},
+  {id:'p_ASML', investor:'Prashant Bokaria', symbol:'ASML', name:'ASML Holding',              qty:14.10141718,  unitCost:709.15, platform:'Vested'},
+  {id:'p_AVGO', investor:'Prashant Bokaria', symbol:'AVGO', name:'Broadcom',                  qty:11.36808184,  unitCost:351.86, platform:'Vested'},
+  {id:'p_AXTI', investor:'Prashant Bokaria', symbol:'AXTI', name:'AXT Inc',                   qty:52.21991299,  unitCost:19.15,  platform:'Vested'},
+  {id:'p_BE',   investor:'Prashant Bokaria', symbol:'BE',   name:'Bloom Energy',              qty:15.90166236,  unitCost:141.49, platform:'Vested'},
+  {id:'p_BMNR', investor:'Prashant Bokaria', symbol:'BMNR', name:'BitMine Immersion Tech',    qty:491.81757276, unitCost:54.09,  platform:'Vested'},
+  {id:'p_CDNS', investor:'Prashant Bokaria', symbol:'CDNS', name:'Cadence Design Systems',    qty:23.25606582,  unitCost:344.00, platform:'Vested'},
+  {id:'p_CEG',  investor:'Prashant Bokaria', symbol:'CEG',  name:'Constellation Energy',      qty:24.98247041,  unitCost:340.24, platform:'Vested'},
+  {id:'p_CELH', investor:'Prashant Bokaria', symbol:'CELH', name:'Celsius Holdings',          qty:26.67139037,  unitCost:37.49,  platform:'Vested'},
+  {id:'p_CRWD', investor:'Prashant Bokaria', symbol:'CRWD', name:'CrowdStrike',               qty:143.20326132, unitCost:186.47, platform:'Vested'},
+  {id:'p_CRWV', investor:'Prashant Bokaria', symbol:'CRWV', name:'CoreWeave',                 qty:15.36298223,  unitCost:81.36,  platform:'Vested'},
+  {id:'p_DDOG', investor:'Prashant Bokaria', symbol:'DDOG', name:'Datadog',                   qty:11.88054924,  unitCost:126.26, platform:'Vested'},
+  {id:'p_ELF',  investor:'Prashant Bokaria', symbol:'ELF',  name:'e.l.f. Beauty',             qty:17.86691742,  unitCost:111.94, platform:'Vested'},
+  {id:'p_GOOG', investor:'Prashant Bokaria', symbol:'GOOG', name:'Alphabet (Google)',          qty:11.19122856,  unitCost:312.74, platform:'Vested'},
+  {id:'p_IREN', investor:'Prashant Bokaria', symbol:'IREN', name:'IREN Limited',              qty:22.41807091,  unitCost:44.61,  platform:'Vested'},
+  {id:'p_META', investor:'Prashant Bokaria', symbol:'META', name:'Meta Platforms',            qty:4.0568371,    unitCost:640.89, platform:'Vested'},
+  {id:'p_MU',   investor:'Prashant Bokaria', symbol:'MU',   name:'Micron Technology',         qty:180.44922562, unitCost:80.36,  platform:'Vested'},
+  {id:'p_NKE',  investor:'Prashant Bokaria', symbol:'NKE',  name:'Nike',                      qty:5.20628914,   unitCost:76.83,  platform:'Vested'},
+  {id:'p_NVDA', investor:'Prashant Bokaria', symbol:'NVDA', name:'Nvidia',                    qty:35.31814868,  unitCost:127.41, platform:'Vested'},
+  {id:'p_PLTR', investor:'Prashant Bokaria', symbol:'PLTR', name:'Palantir Technologies',     qty:1937.09876545,unitCost:20.54,  platform:'Vested'},
+  {id:'p_PYPL', investor:'Prashant Bokaria', symbol:'PYPL', name:'PayPal',                    qty:12.73389927,  unitCost:78.53,  platform:'Vested'},
+  {id:'p_SOFI', investor:'Prashant Bokaria', symbol:'SOFI', name:'SoFi Technologies',         qty:1029.18131442,unitCost:15.87,  platform:'Vested'},
+  {id:'p_TAC',  investor:'Prashant Bokaria', symbol:'TAC',  name:'TransAlta Corp',            qty:201.11292117, unitCost:12.43,  platform:'Vested'},
+  {id:'p_TSLA', investor:'Prashant Bokaria', symbol:'TSLA', name:'Tesla',                     qty:1114.87813145,unitCost:263.86, platform:'Vested'},
+  {id:'p_URA',  investor:'Prashant Bokaria', symbol:'URA',  name:'Global X Uranium ETF',      qty:52.75952045,  unitCost:56.86,  platform:'Vested'},
+  {id:'p_VRT',  investor:'Prashant Bokaria', symbol:'VRT',  name:'Vertiv Holdings',           qty:45.83641999,  unitCost:152.72, platform:'Vested'},
+  {id:'p_ZS',   investor:'Prashant Bokaria', symbol:'ZS',   name:'Zscaler',                   qty:7.32933732,   unitCost:204.66, platform:'Vested'},
+
+  // SHALINI — Kristal (U21292058)
+  {id:'s_AMZN', investor:'Shalini Bokaria', symbol:'AMZN', name:'Amazon',                    qty:15.00,        unitCost:222.12, platform:'Kristal'},
+  {id:'s_AMD',  investor:'Shalini Bokaria', symbol:'AMD',  name:'Advanced Micro Devices',    qty:97.00,        unitCost:161.41, platform:'Kristal'},
+  {id:'s_NVDA', investor:'Shalini Bokaria', symbol:'NVDA', name:'Nvidia',                    qty:887.00,       unitCost:172.08, platform:'Kristal'},
+  {id:'s_TSLA', investor:'Shalini Bokaria', symbol:'TSLA', name:'Tesla',                     qty:979.00,       unitCost:319.40, platform:'Kristal'},
+  {id:'s_OKTA', investor:'Shalini Bokaria', symbol:'OKTA', name:'Okta',                      qty:25.00,        unitCost:89.79,  platform:'Kristal'},
+  {id:'s_PLTR', investor:'Shalini Bokaria', symbol:'PLTR', name:'Palantir Technologies',     qty:614.00,       unitCost:154.45, platform:'Kristal'},
+  {id:'s_ASML', investor:'Shalini Bokaria', symbol:'ASML', name:'ASML Holding',              qty:2.00,         unitCost:733.00, platform:'Kristal'},
+  {id:'s_AMAT', investor:'Shalini Bokaria', symbol:'AMAT', name:'Applied Materials',         qty:10.00,        unitCost:159.50, platform:'Kristal'},
+  {id:'s_AVGO', investor:'Shalini Bokaria', symbol:'AVGO', name:'Broadcom',                  qty:22.00,        unitCost:289.69, platform:'Kristal'},
+  {id:'s_CELH', investor:'Shalini Bokaria', symbol:'CELH', name:'Celsius Holdings',          qty:33.00,        unitCost:61.81,  platform:'Kristal'},
+  {id:'s_MU',   investor:'Shalini Bokaria', symbol:'MU',   name:'Micron Technology',         qty:30.00,        unitCost:114.83, platform:'Kristal'},
+  {id:'s_TSM',  investor:'Shalini Bokaria', symbol:'TSM',  name:'Taiwan Semiconductor',      qty:12.00,        unitCost:226.28, platform:'Kristal'},
+  {id:'s_CRWD', investor:'Shalini Bokaria', symbol:'CRWD', name:'CrowdStrike',               qty:10.00,        unitCost:413.22, platform:'Kristal'},
+  {id:'s_MRVL', investor:'Shalini Bokaria', symbol:'MRVL', name:'Marvell Technology',        qty:15.00,        unitCost:71.11,  platform:'Kristal'},
+  {id:'s_SOFI', investor:'Shalini Bokaria', symbol:'SOFI', name:'SoFi Technologies',         qty:1300.00,      unitCost:23.19,  platform:'Kristal'},
+  {id:'s_VRT',  investor:'Shalini Bokaria', symbol:'VRT',  name:'Vertiv Holdings',           qty:18.00,        unitCost:125.01, platform:'Kristal'},
+  {id:'s_ELF',  investor:'Shalini Bokaria', symbol:'ELF',  name:'e.l.f. Beauty',             qty:20.00,        unitCost:116.41, platform:'Kristal'},
+
+  // TANVI — Vested/DriveWealth (VSTF-001-VSHT000545)
+  {id:'t_AMD',  investor:'Tanvi Bokaria', symbol:'AMD',  name:'Advanced Micro Devices',    qty:29.69703947,  unitCost:218.88, platform:'Vested'},
+  {id:'t_ANET', investor:'Tanvi Bokaria', symbol:'ANET', name:'Arista Networks',           qty:15.34630769,  unitCost:130.32, platform:'Vested'},
+  {id:'t_CRWD', investor:'Tanvi Bokaria', symbol:'CRWD', name:'CrowdStrike',               qty:3.80277062,   unitCost:460.19, platform:'Vested'},
+  {id:'t_DDOG', investor:'Tanvi Bokaria', symbol:'DDOG', name:'Datadog',                   qty:18.88230747,  unitCost:132.40, platform:'Vested'},
+  {id:'t_IREN', investor:'Tanvi Bokaria', symbol:'IREN', name:'IREN Limited',              qty:16.2877656,   unitCost:61.40,  platform:'Vested'},
+  {id:'t_META', investor:'Tanvi Bokaria', symbol:'META', name:'Meta Platforms',            qty:4.88612892,   unitCost:665.15, platform:'Vested'},
+  {id:'t_MU',   investor:'Tanvi Bokaria', symbol:'MU',   name:'Micron Technology',         qty:8.72508598,   unitCost:429.80, platform:'Vested'},
+  {id:'t_NVDA', investor:'Tanvi Bokaria', symbol:'NVDA', name:'Nvidia',                    qty:31.53719366,  unitCost:126.83, platform:'Vested'},
+  {id:'t_PATH', investor:'Tanvi Bokaria', symbol:'PATH', name:'UiPath',                    qty:218.86403508, unitCost:22.85,  platform:'Vested'},
+  {id:'t_PLTR', investor:'Tanvi Bokaria', symbol:'PLTR', name:'Palantir Technologies',     qty:350.76544293, unitCost:32.07,  platform:'Vested'},
+  {id:'t_SMCI', investor:'Tanvi Bokaria', symbol:'SMCI', name:'Super Micro Computer',      qty:54.56095635,  unitCost:44.45,  platform:'Vested'},
+  {id:'t_SOFI', investor:'Tanvi Bokaria', symbol:'SOFI', name:'SoFi Technologies',         qty:116.75133635, unitCost:14.99,  platform:'Vested'},
+  {id:'t_TSLA', investor:'Tanvi Bokaria', symbol:'TSLA', name:'Tesla',                     qty:99.30401377,  unitCost:182.97, platform:'Vested'},
+  {id:'t_VRT',  investor:'Tanvi Bokaria', symbol:'VRT',  name:'Vertiv Holdings',           qty:11.76864086,  unitCost:169.94, platform:'Vested'},
+  {id:'t_ZS',   investor:'Tanvi Bokaria', symbol:'ZS',   name:'Zscaler',                   qty:14.28121173,  unitCost:199.56, platform:'Vested'},
+];
+
+let nyseData = NYSE_HOLDINGS.map(h=>({...h, livePrice:null, liveValue:null}));
+let usdInrRate = null;
+let nyseActiveFilter = 'all';
+
+let portfolioData = PORTFOLIO.map(h=>({...h}));
+let navCache = {}, lastRefreshed = new Date('2026-02-05'), activeFilter = 'all';
+let sheetsConfig = null, sheetsConnected = false;
+let memberChartInst = null, categoryChartInst = null;
+
+// ═══════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════
+const fmtCr = v=>'₹'+(v/10000000).toFixed(2)+' Cr';
+function fmtL(v){if(Math.abs(v)>=10000000)return fmtCr(v);if(Math.abs(v)>=100000)return'₹'+(v/100000).toFixed(2)+' L';return'₹'+v.toLocaleString('en-IN',{maximumFractionDigits:0});}
+// Full precision for table Invested / Current Value columns — exact rupees to 2 decimal places
+function fmtExact(v){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  return '₹'+v.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+const fmtDate = d=>d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+const gainClass = v=>v>=0?'gain-text':'loss-text';
+const gainPrefix = v=>v>=0?'+':'';
+function holdingDays(pd){if(!pd)return null;return Math.floor((lastRefreshed-new Date(pd))/86400000);}
+function fmtDays(d){if(d===null)return'—';if(d>=365){const y=Math.floor(d/365),m=Math.floor((d%365)/30);return y+'y'+(m>0?' '+m+'m':'');}if(d>=30)return Math.floor(d/30)+'m';return d+'d';}
+function getTagClass(h){if(h.type==='PMS'||h.type==='AIF')return'tag-aif';if(h.category==='Equity')return'tag-equity';if(h.category.includes('Debt'))return'tag-debt';return'tag-hybrid';}
+function getTypeLabel(h){return h.type==='PMS'?'PMS':h.type==='AIF'?'AIF':h.category;}
+function shortName(n){return n.replace(' Bokaria','').replace(' HUF',' HUF');}
+
+// ═══════════════════════════════════
+// TOTALS
+// ═══════════════════════════════════
+function memberTotals(){
+  const fx=usdInrRate||84.5;
+  const t={};
+  for(const m of Object.keys(MEMBER_META)){
+    const h=portfolioData.filter(x=>x.investor===m);
+    const nyseH=nyseData.filter(x=>x.investor===m);
+    const mfInvested=h.reduce((a,x)=>a+x.invested,0);
+    const mfCurrent=h.reduce((a,x)=>a+(x.currentValue||0),0);
+    const nyseInvested=nyseH.reduce((a,x)=>a+(x.qty*x.unitCost*fx),0);
+    const nyseCurrent=nyseH.reduce((a,x)=>a+((x.liveValue||x.qty*x.unitCost)*fx),0);
+    t[m]={
+      invested:mfInvested+nyseInvested,
+      current:mfCurrent+nyseCurrent,
+      count:h.length+nyseH.length,
+      mfInvested, mfCurrent, nyseInvested, nyseCurrent
+    };
+    t[m].gain=t[m].current-t[m].invested;
+    t[m].gainPct=t[m].invested>0?(t[m].gain/t[m].invested)*100:0;
+  }
+  return t;
+}
+function portfolioTotals(){
+  const fx=usdInrRate||84.5;
+  const mfI=portfolioData.reduce((a,h)=>a+h.invested,0);
+  const mfC=portfolioData.reduce((a,h)=>a+(h.currentValue||0),0);
+  const nyseI=nyseData.reduce((a,h)=>a+(h.qty*h.unitCost*fx),0);
+  const nyseC=nyseData.reduce((a,h)=>a+((h.liveValue||h.qty*h.unitCost)*fx),0);
+  const i=mfI+nyseI, c=mfC+nyseC;
+  return{invested:i,current:c,gain:c-i,gainPct:((c-i)/i)*100};
+}
+function categoryTotals(){
+  const fx=usdInrRate||84.5;
+  const c={};
+  portfolioData.forEach(h=>{const k=h.type==='PMS'?'PMS':h.type==='AIF'?'AIF':h.category;c[k]=(c[k]||0)+(h.currentValue||0);});
+  // NYSE as its own category
+  const nyseTotal=nyseData.reduce((a,h)=>a+((h.liveValue||h.qty*h.unitCost)*fx),0);
+  if(nyseTotal>0) c['NYSE']=(c['NYSE']||0)+nyseTotal;
+  return c;
+}
+
+// ═══════════════════════════════════
+// AMFI NAV FETCH
+// ═══════════════════════════════════
+async function fetchSingleNAV(code){
+  try{const r=await fetch(`https://api.mfapi.in/mf/${code}/latest`);if(!r.ok)return null;const d=await r.json();if(d.data?.length)return{nav:parseFloat(d.data[0].nav),date:d.data[0].date};}catch(e){}return null;
+}
+async function refreshNAVs(){
+  const btn=document.getElementById('refreshBtn'),icon=document.getElementById('refreshIcon');
+  const ov=document.getElementById('loadingOverlay'),st=document.getElementById('loadingStatus');
+  btn.disabled=true;icon.classList.add('spin');ov.classList.add('visible');
+
+  // 1. Re-sync from Google Sheets first (picks up latest PMS/AIF values and new holdings)
+  if(sheetsConnected){
+    document.getElementById('loadingText').textContent='Syncing from Google Sheets';
+    st.textContent='Reading latest values from Sheets...';
+    await loadFromSheets();
+  }
+
+  // 2. Fetch USD/INR rate
+  document.getElementById('loadingText').textContent='Fetching exchange rate';
+  st.textContent='Getting USD/INR rate...';
+  await fetchUSDINR();
+
+  // 3. Fetch MF NAVs
+  document.getElementById('loadingText').textContent='Fetching MF NAVs';
+  const codes=[...new Set(portfolioData.filter(h=>h.schemeCode).map(h=>h.schemeCode))];
+  for(const code of codes){
+    st.textContent='Fetching '+(MF_NAMES[code]||code)+'...';
+    const r=await fetchSingleNAV(code);
+    if(r){navCache[code]=r;portfolioData.forEach(h=>{if(h.schemeCode===code){h.currentNav=r.nav;h.currentValue=h.units*r.nav;h.navDate=r.date;}});}
+    await new Promise(x=>setTimeout(x,80));
+  }
+
+  // 3. Fetch NYSE stock prices
+  document.getElementById('loadingText').textContent='Fetching NYSE prices';
+  const symbols=[...new Set(nyseData.map(h=>h.symbol))];
+  for(const sym of symbols){
+    st.textContent='Fetching '+sym+'...';
+    await fetchStockPrice(sym);
+    await new Promise(x=>setTimeout(x,120));
+  }
+
+  lastRefreshed=new Date();st.textContent='Done!';
+
+  // 4. Write full portfolio snapshot to Sheets
+  if(sheetsConnected){
+    st.textContent='Saving snapshot to Google Sheets...';
+    await writePortfolioSnapshot();
+  }
+
+  await new Promise(x=>setTimeout(x,300));
+  ov.classList.remove('visible');btn.disabled=false;icon.classList.remove('spin');
+  renderAll();
+}
+
+// ═══════════════════════════════════
+// PORTFOLIO SNAPSHOT → SHEETS
+// ═══════════════════════════════════
+async function writePortfolioSnapshot(){
+  if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId) return false;
+  try{
+    const fx = usdInrRate||84.5;
+    const ts = lastRefreshed.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+    // Build rows — MF/PMS/AIF holdings
+    const mfRows = portfolioData.map(h=>{
+      const gain = (h.currentValue||0) - h.invested;
+      const gainPct = h.invested>0 ? ((gain/h.invested)*100).toFixed(2)+'%' : '—';
+      const days = holdingDays(h.purchaseDate)||0;
+      const cagr = calcCAGR(h.invested, h.currentValue||0, days);
+      return [
+        ts,
+        h.investor,
+        h.originalName||h.fund,
+        h.currentName||h.fund,
+        h.type,
+        h.category,
+        h.folio||'',
+        h.invested.toFixed(2),
+        (h.currentValue||0).toFixed(2),
+        gain.toFixed(2),
+        gainPct,
+        cagr!==null ? cagr.toFixed(2)+'%' : '—',
+        h.currentNav ? h.currentNav.toFixed(4) : '—',
+        h.navDate||'',
+        h.purchaseDate||'',
+        days+'d',
+        h.schemeCode||'',
+        'INR',
+        ''  // USD value blank for MF/PMS/AIF
+      ];
+    });
+
+    // NYSE holdings
+    const nyseRows = nyseData.map(h=>{
+      const cost = h.qty * h.unitCost;
+      const value = h.liveValue || cost;
+      const valueINR = value * fx;
+      const gain = value - cost;
+      const gainPct = cost>0 ? ((gain/cost)*100).toFixed(2)+'%' : '—';
+      return [
+        ts,
+        h.investor,
+        h.name,           // original name
+        h.symbol,         // current name / ticker
+        'NYSE',
+        'NYSE Equity',
+        h.platform,
+        (cost*fx).toFixed(2),        // invested INR
+        valueINR.toFixed(2),          // current value INR
+        ((value-cost)*fx).toFixed(2), // gain INR
+        gainPct,
+        '—',              // CAGR
+        h.livePrice ? h.livePrice.toFixed(2) : '—',  // price in USD
+        '',
+        '',
+        '',
+        h.symbol,
+        'INR (converted)',
+        '$'+value.toFixed(2)  // USD value
+      ];
+    });
+
+    const allRows = [...mfRows, ...nyseRows];
+
+    // Headers
+    const headers = [
+      'As Of','Investor','Original Name','Current Name','Type','Category',
+      'Folio / Platform','Invested (₹)','Current Value (₹)','Gain/Loss (₹)',
+      'Return %','CAGR','NAV / Price','NAV Date','Purchase Date','Holding Period',
+      'Scheme Code / Ticker','Currency','USD Value'
+    ];
+
+    // Clear the sheet and rewrite
+    const sheetId = sheetsConfig.sheetId;
+    const token = sheetsConfig.accessToken;
+
+    // First clear existing data
+    await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/portfolio_snapshot:clear`,
+      {method:'POST', headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}}
+    );
+
+    // Write headers + all rows
+    const values = [headers, ...allRows];
+    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/portfolio_snapshot!A1?valueInputOption=USER_ENTERED`;
+    const r = await fetch(writeUrl, {
+      method:'PUT',
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+      body: JSON.stringify({values})
+    });
+
+    if(!r.ok){
+      const err = await r.json().catch(()=>({}));
+      console.error('Snapshot write error:', err);
+      return false;
+    }
+    return true;
+  }catch(e){
+    console.error('writePortfolioSnapshot error:', e);
+    return false;
+  }
+}
+
+// ═══════════════════════════════════
+// NYSE PRICE + FX FETCH
+// ═══════════════════════════════════
+async function fetchUSDINR(){
+  try{
+    // Use exchangerate-api (free, no key needed for this endpoint)
+    const r=await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+    if(!r.ok)throw new Error('FX fetch failed');
+    const d=await r.json();
+    usdInrRate=d.rates?.INR||null;
+    if(usdInrRate){
+      document.getElementById('fxPill').textContent=`USD/INR: ₹${usdInrRate.toFixed(2)}`;
+      document.getElementById('fxPill').style.color='var(--green)';
+    }
+  }catch(e){
+    // Fallback to a reasonable rate if API fails
+    if(!usdInrRate) usdInrRate=84.5;
+    document.getElementById('fxPill').textContent=`USD/INR: ₹${usdInrRate.toFixed(2)} (cached)`;
+  }
+}
+
+const FINNHUB_KEY = 'd7giaahr01qmqj45f3ngd7giaahr01qmqj45f3o0';
+
+async function fetchStockPrice(symbol){
+  try{
+    const url=`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`;
+    const r=await fetch(url);
+    if(!r.ok)return;
+    const d=await r.json();
+    const price=d?.c; // 'c' = current price in Finnhub
+    if(price&&price>0){
+      nyseData.forEach(h=>{
+        if(h.symbol===symbol){
+          h.livePrice=price;
+          h.liveValue=h.qty*price;
+        }
+      });
+    }
+  }catch(e){console.error('Finnhub error',symbol,e);}
+}
+
+function nyseTotal(filter){
+  const data=filter==='all'?nyseData:nyseData.filter(h=>h.investor===filter);
+  const invested=data.reduce((a,h)=>a+h.qty*h.unitCost,0);
+  const value=data.reduce((a,h)=>a+(h.liveValue||h.qty*h.unitCost),0);
+  return{invested,value,gain:value-invested};
+}
+
+function renderNYSE(){
+  const data=nyseActiveFilter==='all'?nyseData:nyseData.filter(h=>h.investor===nyseActiveFilter);
+  document.getElementById('nyseCount').textContent=nyseData.length+' STOCKS';
+  const tbody=document.getElementById('nyseBody');tbody.innerHTML='';
+  const fx=usdInrRate||84.5;
+
+  data.forEach(h=>{
+    const cost=h.qty*h.unitCost;
+    const value=h.liveValue||cost;
+    const price=h.livePrice||h.unitCost;
+    const gain=value-cost;
+    const gainPct=cost>0?(gain/cost)*100:0;
+    const valueINR=value*fx;
+    const meta=MEMBER_META[h.investor];
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>
+        <div style="font-weight:600;font-size:13px">${h.symbol}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${h.name}</div>
+      </td>
+      <td><span class="member-dot" style="background:${meta?meta.color:'#666'}"></span><span style="font-size:12px">${shortName(h.investor)}</span></td>
+      <td><span style="font-size:11px;font-family:'DM Mono',monospace;color:var(--text-muted);background:var(--surface2);padding:2px 6px;border-radius:3px">${h.platform}</span></td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">${h.qty.toFixed(4)}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">$${h.unitCost.toFixed(2)}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">
+        ${h.livePrice?`<span style="color:var(--green)">$${h.livePrice.toFixed(2)}</span><div class="status-dot live-dot" style="display:inline-block;margin-left:4px"></div>`:'<span style="color:var(--text-dim)">—</span>'}
+      </td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">$${value.toFixed(2)}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:600">₹${(valueINR/100000).toFixed(2)} L</td>
+      <td style="text-align:right">
+        <div class="${gainClass(gain)}" style="font-family:'DM Mono',monospace;font-size:12px">${gainPrefix(gain)}$${Math.abs(gain).toFixed(2)}</div>
+        <div class="${gainClass(gain)}" style="font-family:'DM Mono',monospace;font-size:11px">${gainPrefix(gainPct)}${gainPct.toFixed(1)}%</div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Footer totals
+  const t=nyseTotal(nyseActiveFilter);
+  const fx2=usdInrRate||84.5;
+  document.getElementById('nyseTotalInvested').textContent='$'+t.invested.toLocaleString('en-US',{maximumFractionDigits:0});
+  document.getElementById('nyseTotalUSD').textContent='$'+t.value.toLocaleString('en-US',{maximumFractionDigits:0});
+  document.getElementById('nyseTotalINR').textContent=fmtCr(t.value*fx2);
+  document.getElementById('nyseTotalGain').innerHTML=`<span class="${gainClass(t.gain)}">${gainPrefix(t.gain)}$${Math.abs(t.gain).toLocaleString('en-US',{maximumFractionDigits:0})} (${gainPrefix(t.gain/t.invested*100)}${(t.gain/t.invested*100).toFixed(1)}%)</span>`;
+}
+
+function filterNYSE(member,btnEl){
+  nyseActiveFilter=member;
+  document.querySelectorAll('#nyseFilter .filter-tab').forEach(b=>b.classList.remove('active'));
+  if(btnEl)btnEl.classList.add('active');
+  renderNYSE();
+}
+
+// ═══════════════════════════════════
+// GOOGLE SHEETS
+// ═══════════════════════════════════
+const LS_KEY='bokaria_sheets_v2';
+// ── Pre-configured credentials — pre-fill for all users ──
+const DEFAULT_SHEET_ID='1kd8w-gEmb8QE184L4VXeu0Ph_ID7cnD8Q8hUICRzuV0';
+const DEFAULT_CLIENT_ID='54722716336-puhqj8e67mf44jbi9unpm2lcgplos829.apps.googleusercontent.com';
+function loadSheetsConfig(){try{const s=localStorage.getItem(LS_KEY);if(s){sheetsConfig=JSON.parse(s);return true;}}catch(e){}return false;}
+function saveSheetsConfig(cfg){sheetsConfig=cfg;try{localStorage.setItem(LS_KEY,JSON.stringify({sheetId:cfg.sheetId,clientId:cfg.clientId}));}catch(e){}}
+function openModal(id){document.getElementById(id).classList.add('visible');}
+function closeModal(id){document.getElementById(id).classList.remove('visible');}
+
+async function connectSheets(){
+  const sheetId=document.getElementById('sheetIdInput').value.trim();
+  const clientId=document.getElementById('clientIdInput').value.trim();
+  const statusEl=document.getElementById('sheetsModalStatus');
+  if(!sheetId||!clientId){statusEl.style.display='block';statusEl.style.color='var(--red)';statusEl.textContent='Please fill in both fields.';return;}
+  statusEl.style.display='block';statusEl.style.color='var(--accent)';statusEl.textContent='Opening Google sign-in...';
+  if(!window.google?.accounts){
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+  }
+  google.accounts.oauth2.initTokenClient({
+    client_id:clientId,
+    scope:'https://www.googleapis.com/auth/spreadsheets',
+    callback:async(tok)=>{
+      if(tok.error){statusEl.style.color='var(--red)';statusEl.textContent='Sign-in failed: '+tok.error;return;}
+      saveSheetsConfig({sheetId,clientId,accessToken:tok.access_token});
+      sheetsConnected=true;
+      statusEl.style.color='var(--green)';statusEl.textContent='Connected! Loading data...';
+      await loadFromSheets();
+      closeModal('sheetsModal');
+      updateSheetsPill('connected','Sheets: Connected');
+      renderAll();
+    }
+  }).requestAccessToken();
+}
+
+// Silent token refresh — called automatically when a 401 is detected
+async function silentTokenRefresh(){
+  const sheetId = sheetsConfig?.sheetId || DEFAULT_SHEET_ID;
+  const clientId = sheetsConfig?.clientId || DEFAULT_CLIENT_ID;
+  if(!window.google?.accounts) return false;
+  return new Promise(resolve=>{
+    try{
+      google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/spreadsheets',
+        prompt: '', // empty prompt = silent refresh if session still valid
+        callback: async(tok)=>{
+          if(tok.error){ resolve(false); return; }
+          saveSheetsConfig({sheetId, clientId, accessToken: tok.access_token});
+          sheetsConnected = true;
+          updateSheetsPill('connected','Sheets: Connected');
+          resolve(true);
+        }
+      }).requestAccessToken({prompt:''});
+    }catch(e){ resolve(false); }
+  });
+}
+
+async function loadFromSheets(){
+  if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId)return;
+  try{
+    // Load PMS/AIF value updates
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A2:G200`;
+    const r=await fetch(url,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+    if(!r.ok){if(r.status===401){updateSheetsPill('error','Sheets: Session expired');sheetsConnected=false;}return;}
+    const data=await r.json();
+    const rows=data.values||[];
+    let synced=0;
+    rows.forEach(row=>{
+      const id=parseInt(row[0]);
+      if(!isNaN(id)){
+        const h=portfolioData.find(x=>x.id===id);
+        if(h){
+          // Columns: id | fund | investor | investedToDate | currentValue | asOfDate | updatedBy | notes
+          const investedToDate = parseFloat(row[3]);
+          const currentValue   = parseFloat(row[4]);
+          const asOfDate       = row[5]||'';
+          if(!isNaN(investedToDate) && investedToDate>0) h.invested     = investedToDate;
+          if(!isNaN(currentValue)   && currentValue>0)   h.currentValue = currentValue;
+          if(asOfDate) h.soaDate = asOfDate;
+          synced++;
+        }
+      }
+    });
+
+    // Load new holdings added via the app — read full 18 columns A:R
+    const nhUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/new_holdings!A2:R1000`;
+    const nhR=await fetch(nhUrl,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+    if(nhR.ok){
+      const nhData=await nhR.json();
+      const nhRows=nhData.values||[];
+      nhRows.forEach(row=>{
+        const id=parseInt(row[0]);
+        if(!isNaN(id)&&!portfolioData.find(h=>h.id===id)){
+          // columns: id|investor|fund|house|folio|type|category|invested|units|navCost|currentValue|purchaseDate|asOfDate|addedOn|schemeCode|originalName|currentName|notes
+          portfolioData.push({
+            id, investor:row[1]||'', fund:row[2]||'', house:row[3]||'', folio:row[4]||'',
+            type:row[5]||'MF', category:row[6]||'Equity',
+            invested:parseFloat(row[7])||0, units:parseFloat(row[8])||null,
+            navCost:parseFloat(row[9])||null, currentNav:null,
+            currentValue:parseFloat(row[10])||0,
+            purchaseDate:row[11]||'', soaDate:row[12]||'',
+            schemeCode:row[14]||null,
+            originalName:row[15]||row[2]||'',
+            currentName:row[16]||row[2]||'',
+          });
+        }
+      });
+    }
+
+    document.getElementById('sheetsSyncStatus').textContent=`PMS/AIF synced from Sheets · ${synced} values loaded`;
+    renderUpdateLog(rows);
+    // Re-render everything so summary cards, member cards and table all reflect Sheets data
+    renderAll();
+    return synced;
+  }catch(e){console.error('loadFromSheets error:',e);}
+}
+
+async function saveToSheets(holdingId, investedToDate, value, asOfDate, updatedBy, notes){
+  if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId) return false;
+  const h=portfolioData.find(x=>x.id===holdingId); if(!h) return false;
+  try{
+    // Read existing rows to find if this holding already has a row
+    const readUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A2:A500`;
+    const rdRes=await fetch(readUrl,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+    if(rdRes.status===401){
+      // Try silent token refresh first
+      updateSheetsPill('error','Sheets: Refreshing session...');
+      const refreshed = await silentTokenRefresh();
+      if(refreshed){
+        // Retry the save with new token — recursive call
+        return await saveToSheets(holdingId, investedToDate, value, asOfDate, updatedBy, notes);
+      }
+      sheetsConnected=false;
+      updateSheetsPill('error','Sheets: Session expired');
+      alert('Google Sheets session has expired. Please click the Sheets button (top right) to reconnect, then save again.');
+      return false;
+    }
+    const rd=await rdRes.json();
+    const rows=rd.values||[];
+    const rowIdx=rows.findIndex(r=>parseInt(r[0])===holdingId);
+
+    // Columns: id | fund | investor | investedToDate | currentValue | asOfDate | updatedBy | notes
+    const vals=[[holdingId, h.fund, h.investor, investedToDate||h.invested||0, value, asOfDate, updatedBy||'webapp', notes||'']];
+    let writeUrl, method;
+    if(rowIdx>=0){
+      // Update existing row
+      writeUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A${rowIdx+2}:H${rowIdx+2}?valueInputOption=USER_ENTERED`;
+      method='PUT';
+    } else {
+      // Append new row
+      writeUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+      method='POST';
+    }
+    const wr=await fetch(writeUrl,{method,headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({values:vals})});
+    if(!wr.ok){
+      const errBody=await wr.json().catch(()=>({}));
+      console.error('saveToSheets failed:', wr.status, JSON.stringify(errBody));
+      if(wr.status===401){
+        sheetsConnected=false;
+        updateSheetsPill('error','Sheets: Session expired');
+        alert('Google Sheets session expired. Please reconnect and save again.');
+      } else {
+        alert('Sheets write failed ('+wr.status+'): '+(errBody?.error?.message||'unknown error'));
+      }
+      return false;
+    }
+    return true;
+  }catch(e){
+    console.error('saveToSheets exception:',e);
+    alert('Sheets save error: '+e.message);
+    return false;
+  }
+}
+
+function updateSheetsPill(state,text){
+  const pill=document.getElementById('sheetsPill'),dot=document.getElementById('sheetsDot'),label=document.getElementById('sheetsStatusLabel');
+  pill.className='sheets-pill'+(state==='connected'?' connected':state==='error'?' error':'');
+  dot.className='sheets-dot'+(state==='connected'?' live':'');
+  label.textContent=text;
+}
+
+function renderUpdateLog(rows){
+  const container=document.getElementById('updateLog');
+  if(!rows.length){container.innerHTML='<div style="padding:13px;font-size:12px;color:var(--text-dim);text-align:center">No updates yet</div>';return;}
+  document.getElementById('logBadge').textContent=rows.length+' ENTRIES';
+  // Columns: id | fund | investor | investedToDate | currentValue | asOfDate | updatedBy | notes
+  container.innerHTML=[...rows].reverse().slice(0,20).map(r=>`
+    <div class="log-row">
+      <div style="font-weight:500;color:var(--text);font-size:12px">${r[1]||'Unknown'} <span style="color:var(--text-dim);font-weight:400">(${r[2]||''})</span></div>
+      <div style="color:var(--text-muted);margin-top:2px;font-size:11px">
+        Invested: ₹${parseFloat(r[3]||0).toLocaleString('en-IN')} &nbsp;·&nbsp;
+        Value: ₹${parseFloat(r[4]||0).toLocaleString('en-IN')} &nbsp;·&nbsp;
+        ${r[5]||'—'} &nbsp;·&nbsp; <span style="color:var(--accent)">${r[6]||'webapp'}</span>
+      </div>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════
+// MANUAL VALUE UPDATES (PMS / AIF)
+// ═══════════════════════════════════
+function renderManualUpdates(){
+  const c=document.getElementById('manualUpdateList');c.innerHTML='';
+  const holdings=portfolioData.filter(h=>h.type==='PMS'||h.type==='AIF');
+  if(!holdings.length){c.innerHTML='<div style="font-size:12px;color:var(--text-dim)">No PMS/AIF holdings found.</div>';return;}
+
+  holdings.forEach(h=>{
+    const block=document.createElement('div');
+    block.style.cssText='padding:12px 0;border-bottom:1px solid var(--border);';
+    block.innerHTML=`
+      <div style="margin-bottom:8px">
+        <div style="font-weight:600;font-size:12px">${h.fund}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${shortName(h.investor)} · ${h.type}${h.soaDate?' · as of '+h.soaDate:''}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div>
+          <div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Invested to Date (₹)</div>
+          <input class="manual-input" style="width:100%" id="inv_${h.id}" type="number" value="${Math.round(h.invested||0)}" placeholder="Amount called">
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Current Value (₹)</div>
+          <input class="manual-input" style="width:100%" id="val_${h.id}" type="number" value="${Math.round(h.currentValue||0)}" placeholder="Market value">
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">As Of Date</div>
+          <input class="manual-input" style="width:100%;font-size:11px;padding:4px 7px" id="date_${h.id}" type="date" value="${h.soaDate?toInputDate(h.soaDate):''}">
+        </div>
+      </div>`;
+    c.appendChild(block);
+  });
+
+  // Remove border from last item
+  const items=c.querySelectorAll('div[style*="border-bottom"]');
+  if(items.length) items[items.length-1].style.borderBottom='none';
+}
+
+// Convert "05-Feb-2026" → "2026-02-05" for date input value
+function toInputDate(str){
+  if(!str)return'';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str))return str;
+  const months={Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+  const m=str.match(/(\d{2})-([A-Za-z]{3})-(\d{4})/);
+  if(m)return`${m[3]}-${months[m[2]]||'01'}-${m[1]}`;
+  return '';
+}
+
+async function applyManualUpdates(){
+  const statusEl=document.getElementById('manualStatus');
+  let updated=0;
+
+  for(const h of portfolioData.filter(x=>x.type==='PMS'||x.type==='AIF')){
+    const invInp  = document.getElementById('inv_'+h.id);
+    const valInp  = document.getElementById('val_'+h.id);
+    const dateInp = document.getElementById('date_'+h.id);
+
+    const newInvested = invInp  ? parseFloat(invInp.value)  : null;
+    const newValue    = valInp  ? parseFloat(valInp.value)  : null;
+    const newDate     = dateInp && dateInp.value ? fmtDate(new Date(dateInp.value)) : fmtDate(new Date());
+
+    // Save if the fields are valid — don't require a change, just valid numbers
+    if(!isNaN(newInvested) && newInvested > 0 && !isNaN(newValue) && newValue > 0){
+      h.invested     = newInvested;
+      h.currentValue = newValue;
+      h.soaDate      = newDate;
+      updated++;
+      if(sheetsConnected){
+        await saveToSheets(h.id, h.invested, h.currentValue, newDate, 'manual', '');
+      }
+    }
+  }
+
+  lastRefreshed = new Date();
+  statusEl.style.display='block';
+  statusEl.style.color = updated > 0 ? 'var(--green)' : 'var(--text-muted)';
+  statusEl.textContent = updated > 0
+    ? `✓ ${updated} holding${updated>1?'s':''} updated${sheetsConnected?' · saved to Google Sheets':' · connect Sheets to persist'}`
+    : 'No valid values found — check all fields are filled.';
+  renderAll();
+}
+
+// ═══════════════════════════════════
+// ADD NEW FUND
+// ═══════════════════════════════════
+// ═══════════════════════════════════
+// SCHEME CODE AUTO-SEARCH
+// ═══════════════════════════════════
+async function searchSchemeCode(){
+  const fundName = document.getElementById('nf_fund').value.trim();
+  if(!fundName){
+    document.getElementById('schemeSearchStatus').textContent = '⚠ Enter the fund name first, then click Search.';
+    return;
+  }
+
+  const btn = document.getElementById('schemeSearchBtn');
+  const statusEl = document.getElementById('schemeSearchStatus');
+  const resultsEl = document.getElementById('schemeSearchResults');
+  btn.disabled = true;
+  statusEl.textContent = 'Searching AMFI database...';
+  resultsEl.style.display = 'none';
+  resultsEl.innerHTML = '';
+
+  try {
+    const q = encodeURIComponent(fundName);
+    const res = await fetch(`https://api.mfapi.in/mf/search?q=${q}`);
+    if(!res.ok) throw new Error('Search failed');
+    const results = await res.json();
+
+    if(!results.length){
+      statusEl.textContent = '⚠ No matches found. Try a shorter or different fund name.';
+      btn.disabled = false;
+      return;
+    }
+
+    // Show top 5 results for accountant to confirm
+    statusEl.textContent = `${results.length} match${results.length>1?'es':''} found — select the correct one:`;
+    resultsEl.style.display = 'block';
+    resultsEl.innerHTML = results.slice(0,6).map(r => `
+      <div onclick="selectSchemeCode('${r.schemeCode}','${r.schemeName.replace(/'/g,"\\'")}', this)"
+        style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s;"
+        onmouseover="this.style.background='var(--surface2)'"
+        onmouseout="this.style.background='transparent'">
+        <div style="font-size:12px;font-weight:500">${r.schemeName}</div>
+        <div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;margin-top:2px">Code: ${r.schemeCode}</div>
+      </div>
+    `).join('') + (results.length > 6 ? `<div style="padding:8px 14px;font-size:11px;color:var(--text-dim)">${results.length - 6} more results — refine the fund name to narrow down</div>` : '');
+
+  } catch(e) {
+    statusEl.textContent = '⚠ Search error: ' + e.message;
+  }
+  btn.disabled = false;
+}
+
+async function selectSchemeCode(code, name, el){
+  // Highlight selected row
+  el.parentElement.querySelectorAll('div').forEach(d => d.style.background = 'transparent');
+  el.style.background = 'rgba(126,184,164,0.12)';
+  el.style.borderLeft = '3px solid var(--accent2)';
+
+  // Set the scheme code
+  document.getElementById('nf_schemeCode').value = code;
+
+  // Fetch and pre-fill current NAV
+  try {
+    const res = await fetch(`https://api.mfapi.in/mf/${code}/latest`);
+    const data = await res.json();
+    if(data.data?.length){
+      const nav = data.data[0].nav;
+      const date = data.data[0].date;
+      document.getElementById('nf_currentNav').value = nav;
+      document.getElementById('schemeSearchStatus').textContent =
+        `✓ Scheme ${code} selected · Current NAV: ₹${nav} (${date}) · pre-filled above`;
+    }
+  } catch(e){}
+
+  // Update official fund name hint
+  document.getElementById('schemeSearchStatus').style.color = 'var(--green)';
+}
+
+function handleNewFundTypeChange(type){
+  document.getElementById('nf_mf_fields').style.display = type==='MF' ? 'block' : 'none';
+  // Reset scheme search when type changes
+  document.getElementById('nf_schemeCode').value = '';
+  document.getElementById('schemeSearchResults').style.display = 'none';
+  document.getElementById('schemeSearchResults').innerHTML = '';
+  document.getElementById('schemeSearchStatus').textContent = '';
+}
+
+function resetAndCloseAddFund(){
+  ['nf_fund','nf_house','nf_folio','nf_invested','nf_currentValue','nf_units','nf_navCost','nf_currentNav','nf_schemeCode','nf_notes'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  ['nf_investor','nf_type','nf_category'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  ['nf_purchaseDate','nf_asOfDate'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('nf_mf_fields').style.display='none';
+  document.getElementById('addFundStatus').style.display='none';
+  document.getElementById('schemeSearchResults').style.display='none';
+  document.getElementById('schemeSearchResults').innerHTML='';
+  document.getElementById('schemeSearchStatus').textContent='';
+  closeModal('addFundModal');
+}
+
+async function addNewFund(){
+  const statusEl=document.getElementById('addFundStatus');
+  statusEl.style.display='none';
+
+  // Collect and validate required fields
+  const fund    = document.getElementById('nf_fund').value.trim();
+  const house   = document.getElementById('nf_house').value.trim();
+  const investor= document.getElementById('nf_investor').value;
+  const type    = document.getElementById('nf_type').value;
+  const category= document.getElementById('nf_category').value;
+  const invested= parseFloat(document.getElementById('nf_invested').value);
+  const currentValue = parseFloat(document.getElementById('nf_currentValue').value);
+  const purchaseDate = document.getElementById('nf_purchaseDate').value;
+
+  if(!fund||!house||!investor||!type||!category||isNaN(invested)||isNaN(currentValue)||!purchaseDate){
+    statusEl.style.display='block'; statusEl.style.color='var(--red)';
+    statusEl.textContent='⚠ Please fill in all required fields (marked *).'; return;
+  }
+
+  // Optional fields
+  const folio      = document.getElementById('nf_folio').value.trim();
+  const units      = parseFloat(document.getElementById('nf_units').value)||null;
+  const navCost    = parseFloat(document.getElementById('nf_navCost').value)||null;
+  const currentNav = parseFloat(document.getElementById('nf_currentNav').value)||null;
+  const notes      = document.getElementById('nf_notes').value.trim();
+  const asOfDateRaw= document.getElementById('nf_asOfDate').value;
+  const asOfDate   = asOfDateRaw ? fmtDate(new Date(asOfDateRaw)) : fmtDate(new Date());
+
+  const newId = Math.max(...portfolioData.map(h=>h.id)) + 1;
+
+  // Get scheme code and official name from search result
+  const schemeCode = document.getElementById('nf_schemeCode').value.trim()||null;
+  const selectedSchemeRow = document.querySelector('#schemeSearchResults div[style*="var(--accent2)"]');
+  const officialName = selectedSchemeRow
+    ? selectedSchemeRow.querySelector('div').textContent.trim()
+    : null;
+
+  // Warn if MF but no scheme code selected (non-blocking)
+  if(type==='MF' && !schemeCode){
+    statusEl.style.display='block'; statusEl.style.color='var(--accent)';
+    statusEl.textContent='⚠ No scheme code selected — live NAV refresh will not work for this fund. Add it now or proceed without it.';
+    // Give accountant 3 seconds to read, then proceed anyway
+    await new Promise(r=>setTimeout(r,3000));
+  }
+
+  const newHolding = {
+    id:newId, investor, fund, house, folio, type, category,
+    invested, units, navCost, currentNav, currentValue,
+    purchaseDate, soaDate:asOfDate, schemeCode,
+    originalName: fund,
+    currentName: officialName || fund,
+  };
+
+  // Add to in-memory data
+  portfolioData.push(newHolding);
+  lastRefreshed=new Date();
+
+  // Save to Sheets
+  let saved=false;
+  if(sheetsConnected) saved=await saveNewHoldingToSheets(newHolding, notes);
+
+  statusEl.style.display='block'; statusEl.style.color='var(--green)';
+  statusEl.textContent=`✓ ${fund} added${schemeCode?' · scheme code '+schemeCode+' locked in for live NAV':''}${saved?' · saved to Google Sheets':''}`;
+
+  renderAll();
+
+  // Close modal after a short delay
+  setTimeout(()=>resetAndCloseAddFund(), 2000);
+}
+
+async function saveNewHoldingToSheets(h, notes=''){
+  if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId)return false;
+  try{
+    // Columns: id|investor|fund|house|folio|type|category|invested|units|navCost|currentValue|purchaseDate|asOfDate|addedOn|schemeCode|originalName|currentName|notes
+    const vals=[[
+      h.id, h.investor, h.fund, h.house||'', h.folio||'',
+      h.type, h.category, h.invested||0, h.units||'',
+      h.navCost||'', h.currentValue||0, h.purchaseDate||'',
+      h.soaDate||'', fmtDate(new Date()), h.schemeCode||'',
+      h.originalName||h.fund, h.currentName||h.fund, notes
+    ]];
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/new_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const r=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({values:vals})});
+    if(!r.ok){
+      const err=await r.json().catch(()=>({}));
+      console.error('Sheets save error:', JSON.stringify(err));
+      alert('Google Sheets save failed: '+(err?.error?.message||r.status)+'\nPlease check your Sheets connection and try again.');
+      return false;
+    }
+    return true;
+  }catch(e){
+    console.error('saveNewHoldingToSheets exception:',e);
+    alert('Google Sheets save error: '+e.message);
+    return false;
+  }
+}
+
+// ═══════════════════════════════════
+// RENDER
+// ═══════════════════════════════════
+function renderAll(){
+  renderSummary();renderMemberCards();renderCharts();renderTable();renderNYSE();
+  renderManualUpdates();renderNavFeed();
+  document.getElementById('headerDate').textContent=fmtDate(lastRefreshed).toUpperCase();
+  document.getElementById('lastUpdatedTime').textContent=lastRefreshed.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function renderSummary(){
+  const t=portfolioTotals();
+  document.getElementById('totalInvested').textContent=fmtCr(t.invested);
+  document.getElementById('totalCurrent').textContent=fmtCr(t.current);
+  document.getElementById('totalGainAmt').textContent=gainPrefix(t.gain)+fmtCr(t.gain)+' total gain';
+  document.getElementById('totalGainAmt').className='stat-sub '+(t.gain>=0?'gain':'loss');
+  document.getElementById('totalReturn').textContent=gainPrefix(t.gainPct)+t.gainPct.toFixed(1)+'%';
+  document.getElementById('totalReturn').className='stat-value '+gainClass(t.gain);
+  document.getElementById('navCoverage').textContent=portfolioData.filter(h=>h.schemeCode).length+' live NAVs';
+  // Update holding count in subtitle and summary card dynamically
+  const total=portfolioData.length;
+  document.querySelector('.header-left .subtitle').innerHTML=`${total} HOLDINGS &nbsp;·&nbsp; 5 INVESTORS &nbsp;·&nbsp; AS AT <span id="headerDate">${fmtDate(lastRefreshed).toUpperCase()}</span>`;
+  document.querySelector('#totalInvested').closest('.stat-card').querySelector('.stat-sub').textContent=`Across ${total} holdings`;
+}
+function renderMemberCards(){
+  const totals=memberTotals(),container=document.getElementById('memberCards');container.innerHTML='';
+  for(const [name,meta] of Object.entries(MEMBER_META)){
+    const t=totals[name];if(!t||t.count===0)continue;
+    const card=document.createElement('div');card.className='member-card'+(activeFilter===name?' active':'');
+    card.onclick=()=>filterTable(name,null);
+    card.innerHTML=`<div class="member-header"><div class="member-avatar" style="background:${meta.color}">${meta.short}</div><div><div class="member-name">${shortName(name)}</div><div class="member-tag">${meta.label} · ${t.count} holdings</div></div></div>
+    <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Current Value</div>
+    <div style="font-size:14px;font-weight:600;font-family:'DM Mono',monospace;color:${meta.color}">${fmtCr(t.current)}</div>
+    <div style="font-size:11px;margin-top:1px" class="${gainClass(t.gain)}">${gainPrefix(t.gain)}${fmtL(t.gain)} (${gainPrefix(t.gainPct)}${t.gainPct.toFixed(1)}%)</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:5px">Invested: ${fmtCr(t.invested)}</div>`;
+    container.appendChild(card);
+  }
+}
+function renderCharts(){
+  const totals=memberTotals();
+  const mems=Object.entries(MEMBER_META).filter(([n])=>{const t=totals[n];return t&&t.count>0;});
+  const mL=mems.map(([n])=>shortName(n)),mV=mems.map(([n])=>totals[n].current),mC=mems.map(([,m])=>m.color);
+  if(memberChartInst)memberChartInst.destroy();
+  memberChartInst=new Chart(document.getElementById('memberChart'),{type:'doughnut',data:{labels:mL,datasets:[{data:mV,backgroundColor:mC,borderColor:'#0d0f14',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{color:'#7a7e8e',font:{family:'DM Sans',size:11},padding:12,boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+((ctx.raw/mV.reduce((a,b)=>a+b,0))*100).toFixed(1)+'%)'}}}}});
+  const cats=categoryTotals(),catC={'Equity':'#5cb88a','Debt':'#7eb8a4','PMS':'#c8a96e','AIF':'#9b8ec4','Debt-Others':'#7eb8a4','EQ-Debt Tax':'#e07b6a','NYSE':'#4a9eca','Hybrid':'#e8a87c'};
+  if(categoryChartInst)categoryChartInst.destroy();
+  categoryChartInst=new Chart(document.getElementById('categoryChart'),{type:'doughnut',data:{labels:Object.keys(cats),datasets:[{data:Object.values(cats),backgroundColor:Object.keys(cats).map(c=>catC[c]||'#4a4f62'),borderColor:'#0d0f14',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{color:'#7a7e8e',font:{family:'DM Sans',size:11},padding:12,boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+((ctx.raw/Object.values(cats).reduce((a,b)=>a+b,0))*100).toFixed(1)+'%)'}}}}});
+}
+function calcCAGR(invested, currentValue, days){
+  if(!invested||invested<=0||!days||days<1) return null;
+  return (Math.pow(currentValue/invested, 365/days) - 1) * 100;
+}
+
+function renderTable(){
+  const data=activeFilter==='all'?portfolioData:portfolioData.filter(h=>h.investor===activeFilter);
+  document.getElementById('tableCount').textContent=data.length+' FUNDS';
+  const tbody=document.getElementById('holdingsBody');tbody.innerHTML='';
+  data.forEach(h=>{
+    const gain=(h.currentValue||0)-h.invested;
+    const gainPct=h.invested>0?(gain/h.invested)*100:0;
+    const meta=MEMBER_META[h.investor],days=holdingDays(h.purchaseDate),isAuto=h.type==='MF'&&h.schemeCode;
+    const cagr=calcCAGR(h.invested, h.currentValue||0, days);
+    const cagrStr=cagr!==null
+      ? `<span class="${gainClass(cagr)}" style="font-family:'DM Mono',monospace;font-size:12px">${gainPrefix(cagr)}${cagr.toFixed(1)}%</span>`
+      : '<span style="color:var(--text-dim)">—</span>';
+
+    // NAV cell — show currentNav for MFs, "—" for PMS/AIF
+    const navStr = h.currentNav
+      ? `<span style="font-family:'DM Mono',monospace;font-size:12px">₹${h.currentNav.toFixed(4)}</span>
+         ${h.navDate?`<div style="font-size:10px;color:var(--text-dim)">${h.navDate}</div>`:''}`
+      : '<span style="color:var(--text-dim)">—</span>';
+
+    const hasNameChange = h.currentName && h.currentName !== h.originalName;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>
+        <div class="fund-name">${h.originalName||h.fund}</div>
+        <span class="fund-house">${h.house}</span>
+      </td>
+      <td>
+        ${hasNameChange
+          ? `<div class="fund-name" style="color:var(--accent2)">${h.currentName}</div><span style="font-size:9px;color:var(--accent);font-family:'DM Mono',monospace;background:rgba(200,169,110,0.12);padding:1px 5px;border-radius:3px;border:1px solid rgba(200,169,110,0.3)">RENAMED</span>`
+          : `<div style="font-size:12px;color:var(--text-dim)">—</div>`
+        }
+      </td>
+      <td><span class="member-dot" style="background:${meta?meta.color:'#666'}"></span><span style="font-size:12px">${shortName(h.investor)}</span></td>
+      <td><span class="tag ${getTagClass(h)}">${getTypeLabel(h)}</span></td>
+      <td style="text-align:right"><span class="amount">${fmtExact(h.invested)}</span></td>
+      <td style="text-align:right"><span class="amount">${fmtExact(h.currentValue||0)}</span>${h.soaDate?`<div style="font-size:10px;color:var(--text-dim)">${h.soaDate}</div>`:''}</td>
+      <td style="text-align:right">${navStr}</td>
+      <td style="text-align:right"><div class="${gainClass(gain)}" style="font-family:'DM Mono',monospace;font-size:12px">${gainPrefix(gain)}${fmtExact(gain)}</div><div class="${gainClass(gain)}" style="font-family:'DM Mono',monospace;font-size:11px">${gainPrefix(gainPct)}${gainPct.toFixed(1)}%</div></td>
+      <td style="text-align:right"><span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-muted)">${fmtDays(days)}</span>${days!==null?`<div style="font-size:10px;color:var(--text-dim)">${days}d</div>`:''}</td>
+      <td style="text-align:right">${cagrStr}</td>
+      <td style="text-align:center">${isAuto?'<span class="status-dot live-dot"></span><span style="font-size:11px;color:var(--green)">Live</span>':'<span class="status-dot manual-dot"></span><span style="font-size:11px;color:var(--accent)">SOA</span>'}</td>
+      <td style="text-align:center"><button class="delete-btn" onclick="confirmDelete(${h.id})" title="Remove fund">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+// ═══════════════════════════════════
+// DELETE FUND
+// ═══════════════════════════════════
+async function confirmDelete(id){
+  const h = portfolioData.find(x=>x.id===id);
+  if(!h) return;
+  const confirmed = window.confirm(`Remove "${h.fund}" (${shortName(h.investor)}) from the dashboard?\n\nThis will remove it from the current view. A record will be saved to Google Sheets for audit purposes.`);
+  if(!confirmed) return;
+
+  // Remove from in-memory data
+  portfolioData = portfolioData.filter(x=>x.id!==id);
+  lastRefreshed = new Date();
+
+  // Log deletion to Sheets
+  if(sheetsConnected) await logDeletionToSheets(h);
+
+  renderAll();
+}
+
+async function logDeletionToSheets(h){
+  if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId) return false;
+  try{
+    const vals=[[
+      h.id, h.fund, h.investor, h.type,
+      fmtL(h.invested), fmtL(h.currentValue||0),
+      fmtDate(new Date()), 'deleted'
+    ]];
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/deleted_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const r=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({values:vals})});
+    return r.ok;
+  }catch(e){console.error(e);return false;}
+}
+
+function renderNavFeed(){
+  const c=document.getElementById('navFeedList');c.innerHTML='';const seen=new Set();
+  portfolioData.filter(h=>h.type==='MF'&&h.currentNav).forEach(h=>{
+    const key=h.schemeCode||h.fund;if(seen.has(key))return;seen.add(key);
+    const cached=h.schemeCode&&navCache[h.schemeCode];
+    const row=document.createElement('div');row.className='nav-status-row';
+    row.innerHTML=`<div class="nav-name"><div class="nav-name-text">${h.fund}</div><div class="nav-date">${cached?cached.date:'05-Feb-2026'}</div></div><div class="nav-value">₹${h.currentNav?h.currentNav.toFixed(4):'—'}</div><div><span class="status-dot live-dot"></span><span style="font-size:10px;color:var(--green)">LIVE</span></div>`;
+    c.appendChild(row);
+  });
+}
+function filterTable(member,btnEl){
+  activeFilter=member;
+  document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active'));
+  if(btnEl)btnEl.classList.add('active');
+  else document.querySelectorAll('.filter-tab').forEach(b=>{if(b.textContent.includes(shortName(member)))b.classList.add('active');});
+  renderTable();renderMemberCards();
+}
+
+// ═══════════════════════════════════
+// INIT
+// ═══════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  renderAll();
+  fetchUSDINR(); // pre-load FX rate on startup
+
+  // Always pre-fill modal with credentials — from localStorage if saved, otherwise defaults
+  const saved = loadSheetsConfig();
+  const sheetId  = (saved && sheetsConfig?.sheetId)  || DEFAULT_SHEET_ID;
+  const clientId = (saved && sheetsConfig?.clientId) || DEFAULT_CLIENT_ID;
+  document.getElementById('sheetIdInput').value  = sheetId;
+  document.getElementById('clientIdInput').value = clientId;
+
+  // Load Google Identity Services and attempt silent sign-in
+  updateSheetsPill('', 'Sheets: Connecting...');
+  try {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+
+    // Request token silently — prompt:'none' avoids showing the popup if already signed in
+    google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      prompt: '',   // empty string = use existing session if available, else show popup
+      callback: async (tok) => {
+        if (tok.error) {
+          // Silent sign-in failed — show the manual connect pill
+          updateSheetsPill('', 'Sheets: Click to connect');
+          return;
+        }
+        saveSheetsConfig({ sheetId, clientId, accessToken: tok.access_token });
+        sheetsConnected = true;
+        updateSheetsPill('connected', 'Sheets: Connected');
+        await loadFromSheets();
+        renderAll();
+      }
+    }).requestAccessToken({ prompt: '' });
+
+  } catch(e) {
+    updateSheetsPill('', 'Sheets: Click to connect');
+  }
+});
+</script>
+</body>
+</html>

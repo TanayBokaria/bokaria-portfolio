@@ -1082,26 +1082,40 @@ async function loadFromSheets(){
   if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId)return;
   try{
     // Load PMS/AIF value updates
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A2:G200`;
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/pms_aif_values!A2:H500`;
     const r=await fetch(url,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
-    if(!r.ok){if(r.status===401){updateSheetsPill('error','Sheets: Session expired');sheetsConnected=false;}return;}
+    if(!r.ok){
+      if(r.status===401){updateSheetsPill('error','Sheets: Session expired');sheetsConnected=false;}
+      return;
+    }
     const data=await r.json();
     const rows=data.values||[];
     let synced=0;
     rows.forEach(row=>{
-      const id=parseInt(row[0]);
-      if(!isNaN(id)){
-        const h=portfolioData.find(x=>x.id===id);
-        if(h){
-          // Columns: id | fund | investor | investedToDate | currentValue | asOfDate | updatedBy | notes
-          const investedToDate = parseFloat(row[3]);
-          const currentValue   = parseFloat(row[4]);
-          const asOfDate       = row[5]||'';
-          if(!isNaN(investedToDate) && investedToDate>0) h.invested     = investedToDate;
-          if(!isNaN(currentValue)   && currentValue>0)   h.currentValue = currentValue;
-          if(asOfDate) h.soaDate = asOfDate;
-          synced++;
-        }
+      if(!row||row.length<5) return;
+      // Try ID match first (column A), then fund name match (column B)
+      const idRaw  = String(row[0]||'').trim();
+      const idNum  = parseInt(idRaw);
+      const fundRaw= String(row[1]||'').trim();
+      const invRaw = String(row[3]||'').trim().replace(/,/g,'');
+      const valRaw = String(row[4]||'').trim().replace(/,/g,'');
+      const dateRaw= String(row[5]||'').trim();
+
+      let h = null;
+      if(!isNaN(idNum) && idNum>0){
+        h = portfolioData.find(x=>x.id===idNum);
+      }
+      if(!h && fundRaw){
+        h = portfolioData.find(x=>x.fund===fundRaw||(x.type==='PMS'||x.type==='AIF')&&x.fund.includes(fundRaw));
+      }
+
+      if(h){
+        const newInvested = parseFloat(invRaw);
+        const newValue    = parseFloat(valRaw);
+        if(!isNaN(newInvested) && newInvested>0) h.invested     = newInvested;
+        if(!isNaN(newValue)    && newValue>0)    h.currentValue = newValue;
+        if(dateRaw) h.soaDate = dateRaw;
+        synced++;
       }
     });
 
@@ -1114,7 +1128,6 @@ async function loadFromSheets(){
       nhRows.forEach(row=>{
         const id=parseInt(row[0]);
         if(!isNaN(id)&&!portfolioData.find(h=>h.id===id)){
-          // columns: id|investor|fund|house|folio|type|category|invested|units|navCost|currentValue|purchaseDate|asOfDate|addedOn|schemeCode|originalName|currentName|notes
           portfolioData.push({
             id, investor:row[1]||'', fund:row[2]||'', house:row[3]||'', folio:row[4]||'',
             type:row[5]||'MF', category:row[6]||'Equity',
@@ -1130,12 +1143,17 @@ async function loadFromSheets(){
       });
     }
 
-    document.getElementById('sheetsSyncStatus').textContent=`PMS/AIF synced from Sheets · ${synced} values loaded`;
+    const statusMsg = synced>0
+      ? `PMS/AIF synced · ${synced} holdings updated from Sheets`
+      : `Sheets connected · no PMS/AIF matches found (${rows.length} rows read)`;
+    document.getElementById('sheetsSyncStatus').textContent=statusMsg;
     renderUpdateLog(rows);
-    // Re-render everything so summary cards, member cards and table all reflect Sheets data
     renderAll();
     return synced;
-  }catch(e){console.error('loadFromSheets error:',e);}
+  }catch(e){
+    console.error('loadFromSheets error:',e);
+    document.getElementById('sheetsSyncStatus').textContent=`Sheets sync error: ${e.message}`;
+  }
 }
 
 async function saveToSheets(holdingId, investedToDate, value, asOfDate, updatedBy, notes){

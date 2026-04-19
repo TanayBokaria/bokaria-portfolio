@@ -9,9 +9,9 @@
 <style>
   :root {
     --bg:#0d0f14;--surface:#13161e;--surface2:#1a1e2a;--border:#232839;
-    --accent:#c8a96e;--accent2:#7eb8a4;--text:#e8e6e0;--text-muted:#7a7e8e;--text-dim:#4a4f62;
+    --accent:#c8a96e;--accent2:#4db8a0;--text:#e8e6e0;--text-muted:#7a7e8e;--text-dim:#4a4f62;
     --green:#5cb88a;--red:#e07b6a;
-    --prashant:#c8a96e;--shalini:#7eb8a4;--tanay:#9b8ec4;--tanvi:#e07b6a;--huf:#c8a96e;
+    --prashant:#e8a838;--shalini:#4db8a0;--tanay:#7b6fe0;--tanvi:#e05c5c;--huf:#3a9fd4;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
@@ -599,11 +599,11 @@ const PORTFOLIO = [
 ];
 
 const MEMBER_META = {
-  'Prashant Bokaria':{color:'#c8a96e',short:'PB',label:'Father'},
-  'Shalini Bokaria':{color:'#7eb8a4',short:'SB',label:'Mother'},
-  'Tanay Bokaria':{color:'#9b8ec4',short:'TB',label:'Son'},
-  'Tanvi Bokaria':{color:'#e07b6a',short:'TV',label:'Daughter'},
-  'Prashant Bokaria HUF':{color:'#c8a96e',short:'HUF',label:'HUF'},
+  'Prashant Bokaria':{color:'#e8a838',short:'PB',label:'Father'},
+  'Shalini Bokaria':{color:'#4db8a0',short:'SB',label:'Mother'},
+  'Tanay Bokaria':{color:'#7b6fe0',short:'TB',label:'Son'},
+  'Tanvi Bokaria':{color:'#e05c5c',short:'TV',label:'Daughter'},
+  'Prashant Bokaria HUF':{color:'#3a9fd4',short:'HUF',label:'HUF'},
 };
 const MF_NAMES = {'118778':'Nippon Small Cap','148457':'Nippon Multi Asset','148500':'Mirae Diversified Equity Allocator FoF','148516':'ICICI ESG','148928':'Mirae NYSE FANG+','120158':'Kotak Equity Opps','118632':'Nippon Large Cap','152728':'ICICI Energy Opps','145552':'Motilal Nasdaq 100','139872':'Motilal Bal Advantage','119727':'SBI Focused Equity','148609':'HDFC Dividend Yield','148574':'Mirae ESG Leaders','148986':'HDFC Banking & Fin','142388':'Edelweiss Recent IPO','150358':'Mirae Nifty SDL 2027','118784':'Nippon Value','150470':'Mirae Bal Advantage','120596':'ICICI L&M Cap','118955':'HDFC Flexi Cap','118535':'Franklin Flexi Cap','119076':'DSP Flexi Cap','151580':'ICICI Innovation','152056':'DSP Multi Asset','148883':'Canara Robeco Focused','148958':'PP Conservative Hybrid','120323':'ICICI Value Discovery','122639':'Parag Parikh Flexi Cap','118950':'HDFC Focused 30'};
 
@@ -1563,7 +1563,16 @@ function renderCharts(){
   const mL=mems.map(([n])=>shortName(n)),mV=mems.map(([n])=>totals[n].current),mC=mems.map(([,m])=>m.color);
   if(memberChartInst)memberChartInst.destroy();
   memberChartInst=new Chart(document.getElementById('memberChart'),{type:'doughnut',data:{labels:mL,datasets:[{data:mV,backgroundColor:mC,borderColor:'#0d0f14',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{color:'#7a7e8e',font:{family:'DM Sans',size:11},padding:12,boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+((ctx.raw/mV.reduce((a,b)=>a+b,0))*100).toFixed(1)+'%)'}}}}});
-  const cats=categoryTotals(),catC={'Equity':'#5cb88a','Debt':'#7eb8a4','PMS':'#c8a96e','AIF':'#9b8ec4','Debt-Others':'#7eb8a4','EQ-Debt Tax':'#e07b6a','NYSE':'#4a9eca','Hybrid':'#e8a87c'};
+  const cats=categoryTotals(),catC={
+    'Equity':     '#2ecc71',   // bright green
+    'Debt':       '#f39c12',   // amber
+    'PMS':        '#e74c3c',   // red
+    'AIF':        '#9b59b6',   // purple
+    'Debt-Others':'#1abc9c',   // turquoise
+    'EQ-Debt Tax':'#e67e22',   // orange
+    'NYSE':       '#3498db',   // bright blue
+    'Hybrid':     '#fd79a8',   // pink
+  };
   if(categoryChartInst)categoryChartInst.destroy();
   categoryChartInst=new Chart(document.getElementById('categoryChart'),{type:'doughnut',data:{labels:Object.keys(cats),datasets:[{data:Object.values(cats),backgroundColor:Object.keys(cats).map(c=>catC[c]||'#4a4f62'),borderColor:'#0d0f14',borderWidth:3,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{color:'#7a7e8e',font:{family:'DM Sans',size:11},padding:12,boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmtCr(ctx.raw)+' ('+((ctx.raw/Object.values(cats).reduce((a,b)=>a+b,0))*100).toFixed(1)+'%)'}}}}});
 }

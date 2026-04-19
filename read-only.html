@@ -12,7 +12,7 @@
       --bg:#0d0f14;--surface:#13161e;--surface2:#1a1e2a;--border:#232839;
       --accent:#c8a96e;--accent2:#7eb8a4;--text:#e8e6e0;--text-muted:#7a7e8e;--text-dim:#4a4f62;
       --green:#5cb88a;--red:#e07b6a;
-      --prashant:#c8a96e;--shalini:#7eb8a4;--tanay:#9b8ec4;--tanvi:#e07b6a;--huf:#c8a96e;
+      --prashant:#e8a838;--shalini:#4db8a0;--tanay:#7b6fe0;--tanvi:#e05c5c;--huf:#3a9fd4;
     }
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
@@ -271,11 +271,11 @@ const SHEET_ID = '1kd8w-gEmb8QE184L4VXeu0Ph_ID7cnD8Q8hUICRzuV0';
 const SNAPSHOT_TAB = 'portfolio_snapshot';
 
 const MEMBER_META = {
-  'Prashant Bokaria':     {color:'#c8a96e', short:'PB',  label:'Father'},
-  'Shalini Bokaria':      {color:'#7eb8a4', short:'SB',  label:'Mother'},
-  'Tanay Bokaria':        {color:'#9b8ec4', short:'TB',  label:'Son'},
-  'Tanvi Bokaria':        {color:'#e07b6a', short:'TV',  label:'Daughter'},
-  'Prashant Bokaria HUF': {color:'#c8a96e', short:'HUF', label:'HUF'},
+  'Prashant Bokaria':     {color:'#e8a838', short:'PB',  label:'Father'},
+  'Shalini Bokaria':      {color:'#4db8a0', short:'SB',  label:'Mother'},
+  'Tanay Bokaria':        {color:'#7b6fe0', short:'TB',  label:'Son'},
+  'Tanvi Bokaria':        {color:'#e05c5c', short:'TV',  label:'Daughter'},
+  'Prashant Bokaria HUF': {color:'#3a9fd4', short:'HUF', label:'HUF'},
 };
 
 // ═══════════════════════════════════
@@ -485,8 +485,16 @@ function renderCharts(){
   });
 
   const cats = categoryTotals();
-  const catC = {'Equity':'#5cb88a','Debt':'#7eb8a4','PMS':'#c8a96e','AIF':'#9b8ec4',
-                'Debt-Others':'#7eb8a4','EQ-Debt Tax':'#e07b6a','NYSE':'#4a9eca','Hybrid':'#e8a87c'};
+  const catC = {
+    'Equity':     '#2ecc71',
+    'Debt':       '#f39c12',
+    'PMS':        '#e74c3c',
+    'AIF':        '#9b59b6',
+    'Debt-Others':'#1abc9c',
+    'EQ-Debt Tax':'#e67e22',
+    'NYSE':       '#3498db',
+    'Hybrid':     '#fd79a8',
+  };
   if(categoryChartInst) categoryChartInst.destroy();
   categoryChartInst = new Chart(document.getElementById('categoryChart'),{
     type:'doughnut',

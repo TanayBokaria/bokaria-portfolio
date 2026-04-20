@@ -858,11 +858,10 @@ async function refreshNAVs(){
 
   lastRefreshed=new Date();st.textContent='Done!';
 
-  // 4. Run scheme code hygiene check
-  document.getElementById('loadingText').textContent='Scheme code hygiene check';
-  st.textContent='Verifying scheme codes against AMFI...';
-  const logContainer = document.getElementById('updateLog');
-  logContainer.innerHTML = ''; // clear previous log
+  // 4. Run scheme code hygiene check (uses navCache — instant)
+  document.getElementById('loadingText').textContent='Almost done';
+  st.textContent='Running hygiene checks...';
+  document.getElementById('updateLog').innerHTML = '';
   runHygieneCheck();
 
   // 5. Write full portfolio snapshot to Sheets

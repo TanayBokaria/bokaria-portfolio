@@ -1947,11 +1947,7 @@ async function handleSOAUpload(event){
   for(const file of files){
     status.innerHTML = `<div class="loading-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>Extracting text from ${sanitize(file.name)}...`;
     try{
-      // Wrap PDF.js extraction with a 30s timeout — fake worker runs on main thread and can hang on large PDFs
-      const text = await Promise.race([
-        extractPDFText(file),
-        new Promise((_,rej) => setTimeout(() => rej(new Error('PDF text extraction timed out after 30s')), 30000))
-      ]);
+      const text = await extractPDFText(file);
       let extracted = parseStatementText(text, file.name);
 
       // Check extraction quality — if partial or blank, try Gemini
@@ -2046,12 +2042,14 @@ function buildBlankResult(fileName){
 
 async function extractPDFText(file){
   const buffer = await file.arrayBuffer();
-  // Use the inline-bundled PDF.js with fake worker (no external worker file needed)
+  // Use the inline-bundled PDF.js with the real CDN worker (same version 3.11.174)
+  // This runs parsing off the main thread, preventing timeouts on large PDFs
   const pdfjsLib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
   if(!pdfjsLib) throw new Error('PDF.js library not available');
-  // Force inline fake worker — workerSrc must be truthy but never fetched when isWorkerDisabled=true
-  if(pdfjsLib.PDFWorkerUtil) pdfjsLib.PDFWorkerUtil.isWorkerDisabled = true;
-  if(pdfjsLib.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = 'data:text/javascript,';
+  // Set the real CDN worker — exact version match is critical
+  if(pdfjsLib.GlobalWorkerOptions){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
   const pdf = await pdfjsLib.getDocument({data: buffer, verbosity: 0}).promise;
   let text = '';
   for(let i=1;i<=pdf.numPages;i++){

@@ -2045,9 +2045,9 @@ async function extractPDFText(file){
   // Use the inline-bundled PDF.js with fake worker (no external worker file needed)
   const pdfjsLib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
   if(!pdfjsLib) throw new Error('PDF.js library not available');
-  // Force fake (inline) worker — avoids the workerSrc check entirely
+  // Force inline fake worker — workerSrc must be truthy but never fetched when isWorkerDisabled=true
   if(pdfjsLib.PDFWorkerUtil) pdfjsLib.PDFWorkerUtil.isWorkerDisabled = true;
-  if(pdfjsLib.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = 'fake';
+  if(pdfjsLib.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = 'data:text/javascript,';
   const pdf = await pdfjsLib.getDocument({data: buffer, verbosity: 0}).promise;
   let text = '';
   for(let i=1;i<=pdf.numPages;i++){

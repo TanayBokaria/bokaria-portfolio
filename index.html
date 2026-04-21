@@ -1947,7 +1947,11 @@ async function handleSOAUpload(event){
   for(const file of files){
     status.innerHTML = `<div class="loading-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>Extracting text from ${sanitize(file.name)}...`;
     try{
-      const text = await extractPDFText(file);
+      // Wrap PDF.js extraction with a 30s timeout — fake worker runs on main thread and can hang on large PDFs
+      const text = await Promise.race([
+        extractPDFText(file),
+        new Promise((_,rej) => setTimeout(() => rej(new Error('PDF text extraction timed out after 30s')), 30000))
+      ]);
       let extracted = parseStatementText(text, file.name);
 
       // Check extraction quality — if partial or blank, try Gemini

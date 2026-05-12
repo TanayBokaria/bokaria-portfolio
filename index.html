@@ -933,7 +933,7 @@ async function fetchSingleNAV(code){
   const RETRYABLE=new Set([429,502,503,504]);
   for(let attempt=0;attempt<2;attempt++){
    try{
-    const r=await fetchWithTimeout(`https://api.mfapi.in/mf/${code}/latest`,{},10000);
+    const r=await fetchWithTimeout(`https://api.mfapi.in/mf/${code}/latest`,{},6000);
     if(RETRYABLE.has(r.status)){
       if(attempt===0) await new Promise(x=>setTimeout(x,1500));
       continue; // retry once
@@ -1538,13 +1538,53 @@ async function loadFromSheets(){
       });
     }
 
+    // Restore last NAV snapshot for MF holdings (so page reload shows saved values, not hardcoded baseline)
+    let navRestored = 0;
+    try{
+      const snapUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/portfolio_snapshot!A2:Q5000`;
+      const snapR=await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
+      if(snapR.ok){
+        const snapData=await snapR.json();
+        const snapRows=snapData.values||[];
+        snapRows.forEach(row=>{
+          if(!row||row.length<9)return;
+          const type=(row[4]||'').trim();
+          if(type!=='MF')return; // PMS/AIF already handled via pms_aif_values
+          const folio=(row[6]||'').trim();
+          const schemeCode=(row[16]||'').trim();
+          const currentVal=parseFloat((row[8]||'').replace(/,/g,''));
+          const nav=parseFloat((row[12]||'').replace(/,/g,''));
+          const navDate=(row[13]||'').trim();
+          let h=null;
+          if(folio) h=portfolioData.find(x=>x.folio===folio&&x.type==='MF');
+          if(!h&&schemeCode) h=portfolioData.find(x=>String(x.schemeCode)===schemeCode&&x.type==='MF');
+          if(h){
+            if(!isNaN(currentVal)&&currentVal>0) h.currentValue=currentVal;
+            if(!isNaN(nav)&&nav>0) h.currentNav=nav;
+            if(navDate) h.navDate=navDate;
+            navRestored++;
+          }
+        });
+        // Restore lastRefreshed timestamp from snapshot
+        if(snapRows.length>0&&snapRows[0][0]){
+          try{
+            const snapTs=new Date(snapRows[0][0]);
+            if(!isNaN(snapTs)){
+              lastRefreshed=snapTs;
+              document.getElementById('lastUpdated').textContent='Last: '+lastRefreshed.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+            }
+          }catch(e){}
+        }
+      }
+    }catch(e){ console.warn('Snapshot restore skipped:',e.message); }
+
     // Load AB UserId → investor map and equity holdings
     await loadABUserMapFromSheets();
     await loadABHoldingsFromSheets();
 
     const statusMsg = synced>0
-      ? `PMS/AIF synced · ${synced} holdings updated from Sheets`
-      : `Sheets connected · no PMS/AIF matches found (${rows.length} rows read)`;
+      ? `PMS/AIF synced · ${synced} holdings updated · ${navRestored} MF NAVs restored from snapshot`
+      : `Sheets connected · ${navRestored} MF NAVs restored from snapshot`;
     document.getElementById('sheetsSyncStatus').textContent=statusMsg;
     renderUpdateLog(rows);
     renderAll();
@@ -4355,7 +4395,9 @@ function showFreshDetail(){
         + '<div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:6px">&#9888; mfapi.in API is temporarily unavailable</div>'
         + '<div style="font-size:11px;color:var(--text-muted);line-height:1.6">'
         + navFetchFailed.length + ' fund(s) could not be updated &mdash; but <strong style="color:var(--text)">your scheme codes are correct</strong>. '
-        + 'This is a server-side outage on mfapi.in. Please try Refresh NAVs again in a few hours.</div>'
+        + 'This is a server-side outage on mfapi.in. '
+        + (lastRefreshed ? '<strong style="color:var(--accent2)">Values shown are from the last saved snapshot (' + lastRefreshed.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) + ').</strong> ' : '')
+        + 'Please try Refresh NAVs again in a few hours.</div>'
         + '</div>';
     } else {
       html += '<div style="font-size:11px;font-family:var(--font-mono,monospace);color:var(--red);margin-bottom:8px">NAV FETCH FAILED — ' + navFetchFailed.length + ' FUND(S)</div>';

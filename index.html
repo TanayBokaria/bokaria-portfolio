@@ -844,6 +844,7 @@ let navRenamed = [];       // {id, oldName, newName} updated during last refresh
 let navApiDown = false;    // true when circuit breaker trips (both sources down)
 let navFromFallback = [];  // codes that succeeded via mfdata.in fallback
 let mfdataApiDown = false; // set true if mfdata.in times out once this session — skip it
+let lastSyncMsg = '';      // last message set by loadFromSheets — preserved across renderAll
 let memberChartInst = null, categoryChartInst = null;
 
 // ═══════════════════════════════════
@@ -1053,8 +1054,10 @@ async function refreshNAVs(){
     localStorage.setItem(NAV_CACHE_KEY,JSON.stringify({ts:Date.now(),navs:_navSnap}));
   }catch(e){}
 
-  // 4. Write full portfolio snapshot to Sheets
-  if(sheetsConnected){
+  // 4. Write full portfolio snapshot to Sheets — only if NAVs actually loaded (don't overwrite good data with failed-refresh values)
+  const mfCodes=codes; // already computed above
+  const navSuccessCount=mfCodes.length-navFetchFailed.length;
+  if(sheetsConnected && navSuccessCount>0){
     document.getElementById('loadingText').textContent='Saving to Sheets';
     st.textContent='Saving snapshot to Google Sheets...';
     await writePortfolioSnapshot();
@@ -1570,13 +1573,13 @@ async function loadFromSheets(){
         const snapRows=snapData.values||[];
         snapRows.forEach(row=>{
           if(!row||row.length<9)return;
-          const type=(row[4]||'').trim();
+          const type=String(row[4]||'').trim();
           if(type!=='MF')return; // PMS/AIF already handled via pms_aif_values
-          const folio=(row[6]||'').trim();
-          const schemeCode=(row[16]||'').trim();
+          const folio=String(row[6]||'').trim();
+          const schemeCode=String(row[16]||'').trim();
           const currentVal=parseFloat(String(row[8]||'').replace(/[₹,\s]/g,''));
           const nav=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
-          const navDate=(row[13]||'').trim();
+          const navDate=String(row[13]||'').trim();
           let h=null;
           if(folio) h=portfolioData.find(x=>x.folio===folio&&x.type==='MF');
           if(!h&&schemeCode) h=portfolioData.find(x=>String(x.schemeCode)===schemeCode&&x.type==='MF');
@@ -1608,6 +1611,7 @@ async function loadFromSheets(){
       ? `PMS/AIF synced · ${synced} holdings updated · ${navRestored} MF NAVs restored from snapshot`
       : `Sheets connected · ${navRestored} MF NAVs restored from snapshot`;
     document.getElementById('sheetsSyncStatus').textContent=statusMsg;
+    lastSyncMsg = statusMsg;
     renderUpdateLog(rows);
     renderAll();
     return synced;
@@ -2026,7 +2030,9 @@ function renderSummary(){
   if(failCount > 0) freshMsgs.push(`<span style="color:var(--red);cursor:pointer" onclick="showFreshDetail()">⚠ ${failCount} fetch failed — click to fix</span>`);
   if(renameCount > 0) freshMsgs.push(`<span style="color:var(--accent)">${renameCount} fund(s) renamed</span>`);
   if(failCount===0 && renameCount===0 && liveCount>0) freshMsgs.push('All codes verified ✓');
-  document.getElementById('sheetsSyncStatus').innerHTML = freshMsgs.join(' &nbsp;·&nbsp; ') || 'Hit Refresh NAVs to verify';
+  document.getElementById('sheetsSyncStatus').innerHTML = freshMsgs.length
+    ? freshMsgs.join(' &nbsp;·&nbsp; ')
+    : (lastSyncMsg || 'Hit Refresh NAVs to verify');
   // Update holding count in subtitle and summary card dynamically
   const total=portfolioData.length;
   document.querySelector('.header-left .subtitle').innerHTML=`${total} HOLDINGS &nbsp;·&nbsp; 5 INVESTORS &nbsp;·&nbsp; AS AT <span id="headerDate">${fmtDate(lastRefreshed).toUpperCase()}</span>`;

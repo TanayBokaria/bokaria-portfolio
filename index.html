@@ -1591,14 +1591,15 @@ async function loadFromSheets(){
               navRestored++;
             }
           } else if(type==='NYSE'){
-            // Restore NYSE live price (col M = price per share in USD, col Q = ticker)
+            // Restore NYSE live price — match by symbol + investor (col Q = ticker, col B = investor)
             const ticker=String(row[16]||'').trim();
+            const investor=String(row[1]||'').trim();
             const livePrice=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
-            const h=nyseData.find(x=>x.symbol===ticker);
-            if(h&&!isNaN(livePrice)&&livePrice>0){
-              h.livePrice=livePrice;
-              h.liveValue=h.qty*livePrice;
-              navRestored++;
+            if(!isNaN(livePrice)&&livePrice>0){
+              // Primary match: same symbol + same investor; fallback: same symbol + no live price yet
+              let h=nyseData.find(x=>x.symbol===ticker&&(x.investor||'')===investor);
+              if(!h) h=nyseData.find(x=>x.symbol===ticker&&(!x.livePrice||x.livePrice<=0));
+              if(h){ h.livePrice=livePrice; h.liveValue=h.qty*livePrice; navRestored++; }
             }
           }
           // PMS/AIF skipped — handled by pms_aif_values tab

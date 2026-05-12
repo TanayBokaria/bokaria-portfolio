@@ -1574,32 +1574,36 @@ async function loadFromSheets(){
         snapRows.forEach(row=>{
           if(!row||row.length<9)return;
           const type=String(row[4]||'').trim();
-          if(type!=='MF')return; // PMS/AIF already handled via pms_aif_values
-          const folio=String(row[6]||'').trim();
-          const schemeCode=String(row[16]||'').trim();
-          const currentVal=parseFloat(String(row[8]||'').replace(/[₹,\s]/g,''));
-          const nav=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
-          const navDate=String(row[13]||'').trim();
-          let h=null;
-          if(folio) h=portfolioData.find(x=>x.folio===folio&&x.type==='MF');
-          if(!h&&schemeCode) h=portfolioData.find(x=>String(x.schemeCode)===schemeCode&&x.type==='MF');
-          if(h){
-            if(!isNaN(currentVal)&&currentVal>0) h.currentValue=currentVal;
-            if(!isNaN(nav)&&nav>0) h.currentNav=nav;
-            if(navDate) h.navDate=navDate;
-            navRestored++;
-          }
-        });
-        // Restore lastRefreshed timestamp from snapshot
-        if(snapRows.length>0&&snapRows[0][0]){
-          try{
-            const snapTs=new Date(snapRows[0][0]);
-            if(!isNaN(snapTs)){
-              lastRefreshed=snapTs;
-              document.getElementById('lastUpdated').textContent='Last: '+lastRefreshed.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+          if(type==='MF'){
+            // Restore MF holding: currentValue, currentNav, navDate
+            const folio=String(row[6]||'').trim();
+            const schemeCode=String(row[16]||'').trim();
+            const currentVal=parseFloat(String(row[8]||'').replace(/[₹,\s]/g,''));
+            const nav=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
+            const navDate=String(row[13]||'').trim();
+            let h=null;
+            if(folio) h=portfolioData.find(x=>x.folio===folio&&x.type==='MF');
+            if(!h&&schemeCode) h=portfolioData.find(x=>String(x.schemeCode)===schemeCode&&x.type==='MF');
+            if(h){
+              if(!isNaN(currentVal)&&currentVal>0) h.currentValue=currentVal;
+              if(!isNaN(nav)&&nav>0) h.currentNav=nav;
+              if(navDate) h.navDate=navDate;
+              navRestored++;
             }
-          }catch(e){}
-        }
+          } else if(type==='NYSE'){
+            // Restore NYSE live price (col M = price per share in USD, col Q = ticker)
+            const ticker=String(row[16]||'').trim();
+            const livePrice=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
+            const h=nyseData.find(x=>x.symbol===ticker);
+            if(h&&!isNaN(livePrice)&&livePrice>0){
+              h.livePrice=livePrice;
+              h.liveValue=h.qty*livePrice;
+              navRestored++;
+            }
+          }
+          // PMS/AIF skipped — handled by pms_aif_values tab
+          // Timestamp restore removed — GSheets serial ≠ JS milliseconds (causes Jan 1970 bug)
+        });
       }
     }catch(e){ console.warn('Snapshot restore skipped:',e.message); }
 

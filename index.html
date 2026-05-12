@@ -843,6 +843,7 @@ let navFetchFailed = [];   // codes that failed during last refresh
 let navRenamed = [];       // {id, oldName, newName} updated during last refresh
 let navApiDown = false;    // true when circuit breaker trips (both sources down)
 let navFromFallback = [];  // codes that succeeded via mfdata.in fallback
+let mfdataApiDown = false; // set true if mfdata.in times out once this session — skip it
 let memberChartInst = null, categoryChartInst = null;
 
 // ═══════════════════════════════════
@@ -962,15 +963,17 @@ async function fetchSingleNAV(code){
   } // end retry loop
 
   // ── Fallback: mfdata.in (different infrastructure, same AMFI scheme codes) ──
-  try{
-    const r2=await fetchWithTimeout(`https://mfdata.in/api/v1/schemes/${code}`,{},6000);
-    if(r2.ok){
-      const d2=await r2.json();
-      if(d2.status==='success'&&d2.data?.nav!=null){
-        return {nav:parseFloat(d2.data.nav),date:d2.data.nav_date||'',schemeName:d2.data.name||'',source:'mfdata.in'};
+  if(!mfdataApiDown){
+    try{
+      const r2=await fetchWithTimeout(`https://mfdata.in/api/v1/schemes/${code}`,{},3000);
+      if(r2.ok){
+        const d2=await r2.json();
+        if(d2.status==='success'&&d2.data?.nav!=null){
+          return {nav:parseFloat(d2.data.nav),date:d2.data.nav_date||'',schemeName:d2.data.name||'',source:'mfdata.in'};
+        }
       }
-    }
-  }catch(e){}
+    }catch(e){ mfdataApiDown=true; } // timed out — skip for rest of session
+  }
 
   return null; // both sources failed
 }
@@ -993,34 +996,39 @@ async function refreshNAVs(){
   await fetchUSDINR();
 
   // 3. Fetch MF NAVs
-  navFetchFailed = []; navRenamed = []; navApiDown = false; navFromFallback = []; // reset tracking
+  navFetchFailed = []; navRenamed = []; navApiDown = false; navFromFallback = []; mfdataApiDown = false; // reset tracking
   document.getElementById('loadingText').textContent='Fetching MF NAVs';
   const codes=[...new Set(portfolioData.filter(h=>h.schemeCode).map(h=>h.schemeCode))];
-  let consecutiveFails=0;
-  for(const code of codes){
-    if(navApiDown){ navFetchFailed.push(code); continue; } // circuit open — skip remaining
-    st.textContent='Fetching '+(MF_NAMES[code]||code)+'...';
-    const r=await fetchSingleNAV(code);
-    if(r){
-      consecutiveFails=0;
-      if(r.source==='mfdata.in') navFromFallback.push(code); // note fallback was used
-      navCache[code]=r;
-      portfolioData.forEach(h=>{
-        if(String(h.schemeCode)===String(code)){
-          h.currentNav=r.nav;
-          h.navDate=r.date;
-          if(h.type==='MF' && h.units && h.units>0) h.currentValue=h.units*r.nav;
-        }
-      });
-    } else {
-      navFetchFailed.push(code);
-      consecutiveFails++;
-      if(consecutiveFails>=3){
-        navApiDown=true; // circuit open — both mfapi.in and mfdata.in are down
-        st.textContent='NAV sources unavailable — stopping fetch';
+
+  // Parallel batch fetching — much faster than sequential + avoids intermittent outage windows
+  // Run in batches of 6 to avoid rate-limiting mfapi.in
+  const BATCH=6;
+  st.textContent='Fetching NAVs ('+codes.length+' funds)...';
+  for(let i=0;i<codes.length;i+=BATCH){
+    const batch=codes.slice(i,i+BATCH);
+    const batchResults=await Promise.all(batch.map(code=>fetchSingleNAV(code).then(r=>({code,r}))));
+    batchResults.forEach(({code,r})=>{
+      if(r){
+        if(r.source==='mfdata.in') navFromFallback.push(code);
+        navCache[code]=r;
+        portfolioData.forEach(h=>{
+          if(String(h.schemeCode)===String(code)){
+            h.currentNav=r.nav;
+            h.navDate=r.date;
+            if(h.type==='MF'&&h.units&&h.units>0) h.currentValue=h.units*r.nav;
+          }
+        });
+      } else {
+        navFetchFailed.push(code);
       }
-    }
-    if(!navApiDown) await new Promise(x=>setTimeout(x,400));
+    });
+    st.textContent='Fetched '+(i+BATCH)+' / '+codes.length+'...';
+    if(i+BATCH<codes.length) await new Promise(x=>setTimeout(x,200)); // brief pause between batches
+  }
+  // Circuit breaker: if >60% failed, flag API as down
+  if(navFetchFailed.length>codes.length*0.6){
+    navApiDown=true;
+    st.textContent='NAV sources unavailable — showing last saved values';
   }
 
   // 3. Fetch NYSE stock prices
@@ -1555,7 +1563,7 @@ async function loadFromSheets(){
     // Restore last NAV snapshot for MF holdings (so page reload shows saved values, not hardcoded baseline)
     let navRestored = 0;
     try{
-      const snapUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/portfolio_snapshot!A2:Q5000`;
+      const snapUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/portfolio_snapshot!A2:Q5000?valueRenderOption=UNFORMATTED_VALUE`;
       const snapR=await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${sheetsConfig.accessToken}`}});
       if(snapR.ok){
         const snapData=await snapR.json();
@@ -1566,8 +1574,8 @@ async function loadFromSheets(){
           if(type!=='MF')return; // PMS/AIF already handled via pms_aif_values
           const folio=(row[6]||'').trim();
           const schemeCode=(row[16]||'').trim();
-          const currentVal=parseFloat((row[8]||'').replace(/,/g,''));
-          const nav=parseFloat((row[12]||'').replace(/,/g,''));
+          const currentVal=parseFloat(String(row[8]||'').replace(/[₹,\s]/g,''));
+          const nav=parseFloat(String(row[12]||'').replace(/[₹,\s]/g,''));
           const navDate=(row[13]||'').trim();
           let h=null;
           if(folio) h=portfolioData.find(x=>x.folio===folio&&x.type==='MF');

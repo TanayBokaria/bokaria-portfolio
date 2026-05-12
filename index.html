@@ -841,7 +841,8 @@ let navCache = {}, lastRefreshed = new Date(), activeFilter = 'all';
 let sheetsConfig = null, sheetsConnected = false;
 let navFetchFailed = [];   // codes that failed during last refresh
 let navRenamed = [];       // {id, oldName, newName} updated during last refresh
-let navApiDown = false;    // true when circuit breaker trips (API outage, not bad codes)
+let navApiDown = false;    // true when circuit breaker trips (both sources down)
+let navFromFallback = [];  // codes that succeeded via mfdata.in fallback
 let memberChartInst = null, categoryChartInst = null;
 
 // ═══════════════════════════════════
@@ -929,7 +930,7 @@ function fetchWithTimeout(url, options={}, ms=12000){
 }
 
 async function fetchSingleNAV(code){
-  // Two attempts for transient HTTP errors (429/502/503/504); timeouts bail immediately
+  // ── Primary: mfapi.in ──
   const RETRYABLE=new Set([429,502,503,504]);
   for(let attempt=0;attempt<2;attempt++){
    try{
@@ -938,9 +939,9 @@ async function fetchSingleNAV(code){
       if(attempt===0) await new Promise(x=>setTimeout(x,1500));
       continue; // retry once
     }
-    if(!r.ok)return null;
+    if(!r.ok) break; // non-retryable error → try fallback
     const d=await r.json();
-    if(!d.data?.length)return null;
+    if(!d.data?.length) break;
     const result={nav:parseFloat(d.data[0].nav),date:d.data[0].date,schemeName:d.meta?.scheme_name||''};
     // Inline name-change detection — no separate hygiene pass needed
     if(result.schemeName){
@@ -954,12 +955,24 @@ async function fetchSingleNAV(code){
         }
       });
     }
-    return result;
+    return result; // success from mfapi.in
   }catch(e){
-    return null; // timeout / network error — don't retry, treat as API down
+    break; // timeout/network error → go straight to fallback
   }
   } // end retry loop
-  return null;
+
+  // ── Fallback: mfdata.in (different infrastructure, same AMFI scheme codes) ──
+  try{
+    const r2=await fetchWithTimeout(`https://mfdata.in/api/v1/schemes/${code}`,{},6000);
+    if(r2.ok){
+      const d2=await r2.json();
+      if(d2.status==='success'&&d2.data?.nav!=null){
+        return {nav:parseFloat(d2.data.nav),date:d2.data.nav_date||'',schemeName:d2.data.name||'',source:'mfdata.in'};
+      }
+    }
+  }catch(e){}
+
+  return null; // both sources failed
 }
 async function refreshNAVs(){
   const btn=document.getElementById('refreshBtn'),icon=document.getElementById('refreshIcon');
@@ -980,7 +993,7 @@ async function refreshNAVs(){
   await fetchUSDINR();
 
   // 3. Fetch MF NAVs
-  navFetchFailed = []; navRenamed = []; navApiDown = false; // reset tracking
+  navFetchFailed = []; navRenamed = []; navApiDown = false; navFromFallback = []; // reset tracking
   document.getElementById('loadingText').textContent='Fetching MF NAVs';
   const codes=[...new Set(portfolioData.filter(h=>h.schemeCode).map(h=>h.schemeCode))];
   let consecutiveFails=0;
@@ -990,6 +1003,7 @@ async function refreshNAVs(){
     const r=await fetchSingleNAV(code);
     if(r){
       consecutiveFails=0;
+      if(r.source==='mfdata.in') navFromFallback.push(code); // note fallback was used
       navCache[code]=r;
       portfolioData.forEach(h=>{
         if(String(h.schemeCode)===String(code)){
@@ -1002,8 +1016,8 @@ async function refreshNAVs(){
       navFetchFailed.push(code);
       consecutiveFails++;
       if(consecutiveFails>=3){
-        navApiDown=true; // circuit open — API is down, not scheme code issue
-        st.textContent='mfapi.in API unavailable — stopping NAV fetch';
+        navApiDown=true; // circuit open — both mfapi.in and mfdata.in are down
+        st.textContent='NAV sources unavailable — stopping fetch';
       }
     }
     if(!navApiDown) await new Promise(x=>setTimeout(x,400));
@@ -1982,10 +1996,15 @@ function renderSummary(){
   const liveCount  = mfHoldings.filter(h=>navCache[h.schemeCode]).length;
   const failCount  = navFetchFailed.length;
   const renameCount= navRenamed.length;
+  const fallbackCount = navFromFallback.length;
 
   if(failCount > 0){
     document.getElementById('navCoverage').textContent = liveCount+' / '+(liveCount+failCount)+' live';
     document.getElementById('navCoverage').className   = 'stat-value loss';
+  } else if(fallbackCount > 0){
+    document.getElementById('navCoverage').textContent = liveCount+' live ('+fallbackCount+' via backup)';
+    document.getElementById('navCoverage').className   = 'stat-value';
+    document.getElementById('navCoverage').style.color = 'var(--accent)';
   } else if(renameCount > 0){
     document.getElementById('navCoverage').textContent = liveCount+' live NAVs';
     document.getElementById('navCoverage').className   = 'stat-value';
@@ -4392,10 +4411,10 @@ function showFreshDetail(){
   if(navFetchFailed.length){
     if(navApiDown){
       html += '<div style="background:rgba(224,123,106,0.1);border:1px solid rgba(224,123,106,0.3);border-radius:8px;padding:12px 16px;margin-bottom:12px">'
-        + '<div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:6px">&#9888; mfapi.in API is temporarily unavailable</div>'
+        + '<div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:6px">&#9888; Both NAV sources are temporarily unavailable</div>'
         + '<div style="font-size:11px;color:var(--text-muted);line-height:1.6">'
-        + navFetchFailed.length + ' fund(s) could not be updated &mdash; but <strong style="color:var(--text)">your scheme codes are correct</strong>. '
-        + 'This is a server-side outage on mfapi.in. '
+        + navFetchFailed.length + ' fund(s) could not be updated — <strong style="color:var(--text)">your scheme codes are correct</strong>. '
+        + 'Both mfapi.in and mfdata.in are unreachable right now. '
         + (lastRefreshed ? '<strong style="color:var(--accent2)">Values shown are from the last saved snapshot (' + lastRefreshed.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) + ').</strong> ' : '')
         + 'Please try Refresh NAVs again in a few hours.</div>'
         + '</div>';
@@ -4416,6 +4435,14 @@ function showFreshDetail(){
     }
   }
 
+  if(navFromFallback.length){
+    html += '<div style="background:rgba(200,169,110,0.08);border:1px solid rgba(200,169,110,0.25);border-radius:8px;padding:12px 16px;margin-bottom:12px">'
+      + '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px">&#8635; mfapi.in was slow — backup source used</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);line-height:1.6">'
+      + navFromFallback.length + ' fund(s) fetched from <strong style="color:var(--text)">mfdata.in</strong> (backup source) because mfapi.in was unresponsive. NAVs are current and accurate — just from a different server.</div>'
+      + '</div>';
+  }
+
   if(navRenamed.length){
     html += '<div style="font-size:11px;font-family:var(--font-mono,monospace);color:var(--accent);margin-bottom:8px">FUND NAMES AUTO-UPDATED — ' + navRenamed.length + '</div>';
     html += '<div style="display:flex;flex-direction:column;gap:6px">';
@@ -4428,8 +4455,8 @@ function showFreshDetail(){
     html += '</div>';
   }
 
-  if(!navFetchFailed.length && !navRenamed.length){
-    html += '<div style="font-size:12px;color:var(--green);text-align:center;padding:12px">✓ All scheme codes fetched successfully. No issues found.</div>';
+  if(!navFetchFailed.length && !navRenamed.length && !navFromFallback.length){
+    html += '<div style="font-size:12px;color:var(--green);text-align:center;padding:12px">✓ All scheme codes fetched successfully from mfapi.in. No issues found.</div>';
   }
 
   panel.innerHTML = html;

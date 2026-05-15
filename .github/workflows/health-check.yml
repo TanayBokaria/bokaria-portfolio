@@ -1,0 +1,192 @@
+name: Dashboard Health Check
+
+# Runs daily at 6:00 AM IST (00:30 UTC).
+# Also triggered manually from the Actions tab — useful before Priya's sessions.
+# On any critical failure, GitHub emails the repo owner automatically.
+
+on:
+  schedule:
+    - cron: '30 0 * * *'   # 06:00 IST = 00:30 UTC
+  workflow_dispatch:         # manual trigger
+
+jobs:
+  health-check:
+    name: Check all dashboard APIs and snapshots
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: pip install requests --quiet
+
+      - name: Run all health checks
+        run: |
+          python3 << 'PYEOF'
+          import requests, json, re, sys
+
+          # ── Config ────────────────────────────────────────────────────────────
+          SCHEME = '118778'   # Nippon India Small Cap — stable, always in both APIs
+
+          SHEETS = {
+              'Prashant': '1kd8w-gEmb8QE184L4VXeu0Ph_ID7cnD8Q8hUICRzuV0',
+              'Piyush':   '1EH3OKMAo_PZdK0DuplRvUH7J6IIaWOcOf5Tmlfglon8',
+              'Prabin':   '1qWrqbm5za6xfvVJK-VlwKgyUTSc6nYOyxwP8Plclk0I',
+          }
+
+          # Update these with the correct GitHub Pages URLs once all dashboards are deployed.
+          # Comment out any URLs that aren't live yet to avoid false failures.
+          PAGES = {
+              'Prashant (admin)':     'https://tanaybokaria.github.io/bokaria-portfolio/',
+              'Prashant (read-only)': 'https://tanaybokaria.github.io/bokaria-portfolio/read-only.html',
+              # 'Piyush (admin)':     'https://tanaybokaria.github.io/piyush-bokaria-portfolio/',
+              # 'Piyush (read-only)': 'https://tanaybokaria.github.io/piyush-bokaria-portfolio/read-only.html',
+              # 'Prabin (admin)':     'https://tanaybokaria.github.io/prabin-bokaria-portfolio/',
+              # 'Prabin (read-only)': 'https://tanaybokaria.github.io/prabin-bokaria-portfolio/read-only.html',
+          }
+
+          # ── Helpers ───────────────────────────────────────────────────────────
+          failures = []
+          warnings = []
+
+          def check(label, fn, critical=True):
+              try:
+                  result = fn()
+                  print(f'  ✅  {label}: {result}')
+              except AssertionError as e:
+                  msg = f'{label} — {e}'
+                  if critical:
+                      failures.append(msg)
+                      print(f'  ❌  {msg}')
+                  else:
+                      warnings.append(msg)
+                      print(f'  ⚠️   {msg}')
+              except Exception as e:
+                  msg = f'{label} — {type(e).__name__}: {e}'
+                  if critical:
+                      failures.append(msg)
+                      print(f'  ❌  {msg}')
+                  else:
+                      warnings.append(msg)
+                      print(f'  ⚠️   {msg}')
+
+          # ── NAV APIs ──────────────────────────────────────────────────────────
+          print('\n══ NAV APIs ════════════════════════════════════════════════════')
+
+          def test_mfapi():
+              r = requests.get(f'https://api.mfapi.in/mf/{SCHEME}/latest', timeout=12)
+              r.raise_for_status()
+              d = r.json()
+              assert d.get('data'), 'Empty data array in response'
+              nav = float(d['data'][0]['nav'])
+              assert nav > 0, f'NAV is {nav} — not positive'
+              date = d['data'][0].get('date', 'no date')
+              return f'NAV = ₹{nav:.2f}  (as of {date})'
+
+          def test_mfdata():
+              r = requests.get(f'https://mfdata.in/api/v1/schemes/{SCHEME}', timeout=10)
+              r.raise_for_status()
+              d = r.json()
+              nav = float(d['data']['nav'])
+              assert nav > 0, f'NAV is {nav} — not positive'
+              return f'NAV = ₹{nav:.2f}'
+
+          check('mfapi.in (primary NAV source)', test_mfapi, critical=True)
+          check('mfdata.in (fallback NAV source)', test_mfdata, critical=False)   # warn only — Priya can't fix this
+
+          # ── FX Rate ───────────────────────────────────────────────────────────
+          print('\n══ FX Rate API ═════════════════════════════════════════════════')
+
+          def test_fx():
+              r = requests.get('https://api.exchangerate-api.com/v4/latest/USD', timeout=10)
+              r.raise_for_status()
+              rate = float(r.json()['rates']['INR'])
+              assert 70 < rate < 130, f'Rate ₹{rate} is outside expected 70–130 range — check API response'
+              return f'USD/INR = ₹{rate:.2f}'
+
+          check('exchangerate-api.com (USD/INR)', test_fx, critical=False)   # dashboard falls back to ₹84.50
+
+          # ── Portfolio Snapshots ───────────────────────────────────────────────
+          print('\n══ Portfolio Snapshots (public gviz/tq) ════════════════════════')
+          print('   (These are the same reads the read-only pages use — no OAuth needed)')
+
+          def test_snapshot(name, sheet_id):
+              url = (
+                  f'https://docs.google.com/spreadsheets/d/{sheet_id}'
+                  f'/gviz/tq?tqx=out:json&sheet=portfolio_snapshot'
+              )
+              r = requests.get(url, timeout=15)
+              r.raise_for_status()
+
+              # gviz/tq wraps JSON in a JSONP callback — strip it
+              m = re.search(r'setResponse\(([\s\S]*?)\);?\s*$', r.text)
+              assert m, (
+                  'Response not in gviz JSONP format. '
+                  'The Google Sheet may not be set to "Anyone with the link can view". '
+                  'Fix: Sheet → Share → General access → Anyone with the link → Viewer.'
+              )
+
+              d = json.loads(m.group(1))
+              if d.get('status') == 'error':
+                  err_msg = (d.get('errors') or [{}])[0].get('message', 'unknown error')
+                  assert False, f'Sheet returned error: {err_msg}'
+
+              rows = d.get('table', {}).get('rows', [])
+              assert len(rows) > 0, (
+                  'portfolio_snapshot tab is empty. '
+                  'Priya needs to open the dashboard and run Refresh NAVs to populate it.'
+              )
+
+              # Column 8 (0-indexed) = "Current Value (₹)" — same order as writePortfolioSnapshot()
+              non_zero = sum(
+                  1 for row in rows
+                  if row.get('c') and len(row['c']) > 8
+                  and row['c'][8] is not None
+                  and row['c'][8].get('v') is not None
+                  and float(row['c'][8]['v']) > 0
+              )
+              pct = (non_zero / len(rows)) * 100 if rows else 0
+
+              assert non_zero > len(rows) * 0.5, (
+                  f'Only {non_zero}/{len(rows)} rows ({pct:.0f}%) have Current Value > ₹0. '
+                  'This looks like a zero-write bug. Priya should run Refresh NAVs and check '
+                  'that "Snapshot saved ✓" appears in the Data Freshness card.'
+              )
+
+              return f'{len(rows)} holdings — {non_zero} with value > ₹0 ({pct:.0f}%)'
+
+          for name, sid in SHEETS.items():
+              check(f'{name} snapshot', lambda s=sid, n=name: test_snapshot(n, s), critical=True)
+
+          # ── GitHub Pages URLs ─────────────────────────────────────────────────
+          print('\n══ GitHub Pages URLs ═══════════════════════════════════════════')
+
+          def test_page(url):
+              r = requests.get(url, timeout=15)
+              assert r.status_code == 200, f'HTTP {r.status_code} (expected 200)'
+              assert len(r.text) > 5000, f'Page only {len(r.text):,} bytes — may be an error page'
+              assert 'Portfolio' in r.text or 'portfolio' in r.text, 'Page does not contain "Portfolio" — wrong page served?'
+              return f'HTTP 200 — {len(r.text):,} bytes'
+
+          for label, url in PAGES.items():
+              check(label, lambda u=url: test_page(u), critical=True)
+
+          # ── Final result ──────────────────────────────────────────────────────
+          print('\n' + '═' * 60)
+
+          if failures:
+              print(f'\n❌  HEALTH CHECK FAILED — {len(failures)} critical issue(s) found:\n')
+              for i, f in enumerate(failures, 1):
+                  print(f'  {i}. {f}')
+              if warnings:
+                  print(f'\n⚠️   {len(warnings)} non-critical warning(s):\n')
+                  for w in warnings:
+                      print(f'  • {w}')
+              print('\nGitHub will email the repo owner. Check the logs above for details.')
+              sys.exit(1)   # marks the workflow as failed → triggers GitHub email
+          else:
+              print('\n✅  All critical checks passed — dashboards are healthy.')
+              if warnings:
+                  print(f'\n⚠️   {len(warnings)} non-critical warning(s) (no action needed):')
+                  for w in warnings:
+                      print(f'  • {w}')
+
+          PYEOF

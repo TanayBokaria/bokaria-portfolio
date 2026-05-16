@@ -4877,8 +4877,10 @@ async function _pfCheckSOAHandler(){
     const wipedByBrowser = input.files.length === 0;
     if(!wipedByBrowser) return {ok:true, detail:'Browser preserves files on input clear'};
     // Browser DOES wipe files — verify the handler reads them BEFORE clearing
+    // Match both Array.from(event.target.files) and Array.from(event.target.files||[])
+    const soaFilesMatch = handleSOAUpload.toString().match(/Array\.from\s*\(\s*event\.target\.files/);
     const src = handleSOAUpload.toString();
-    const filesIdx = src.indexOf('Array.from(event.target.files)');
+    const filesIdx = soaFilesMatch ? soaFilesMatch.index : -1;
     const clearIdx = src.indexOf("event.target.value = ''");
     if(filesIdx === -1) return {ok:false, error:'Cannot locate file-read in handler source'};
     if(clearIdx === -1 || filesIdx < clearIdx)
@@ -4899,9 +4901,11 @@ async function _pfCheckABHandler(){
     input.value = '';
     const wipedByBrowser = input.files.length === 0;
     if(!wipedByBrowser) return {ok:true, detail:'Browser preserves files on input clear'};
-    const src = handleABUpload.toString();
-    const filesIdx = src.indexOf('Array.from(event.target.files)');
-    const clearIdx = src.indexOf("event.target.value = ''");
+    // Match both Array.from(event.target.files) and Array.from(event.target.files||[])
+    const abFilesMatch = handleABUpload.toString().match(/Array\.from\s*\(\s*event\.target\.files/);
+    const srcAB = handleABUpload.toString();
+    const filesIdx = abFilesMatch ? abFilesMatch.index : -1;
+    const clearIdx = srcAB.indexOf("event.target.value = ''");
     if(filesIdx === -1) return {ok:false, error:'Cannot locate file-read in AB handler source'};
     if(clearIdx === -1 || filesIdx < clearIdx)
       return {ok:true, detail:'Files read before input clear — import will work ✓'};

@@ -798,6 +798,9 @@ const PORTFOLIO = [
   {id:42,investor:'Prashant Bokaria',folio:'10111',house:'Aarth',fund:'Aarth AIF Growth Fund',category:'AIF',invested:10000000,units:56538.81,navCost:0,currentNav:null,currentValue:10967741.41,type:'AIF',schemeCode:null,purchaseDate:'2025-03-26',originalName:'Aarth AIF Growth Fund',currentName:'Aarth AIF Growth Fund'},
   {id:43,investor:'Prashant Bokaria',folio:'EIMJ0436',house:'Emkay',fund:'Emkay Investment Managers Ltd (PMS)',category:'PMS',invested:40000000,units:null,navCost:null,currentNav:null,currentValue:40000000,type:'PMS',schemeCode:null,purchaseDate:'2025-10-03',originalName:'Emkay Investment Managers Ltd (PMS)',currentName:'Emkay Investment Managers Ltd (PMS)'},
   {id:44,investor:'Prashant Bokaria',folio:'9106948934',house:'Nippon',fund:'Nippon India Equity Opportunities AIF - Scheme 9',category:'AIF',invested:9999500,units:107101.86,navCost:100,currentNav:120,currentValue:12852223.56,type:'AIF',schemeCode:null,purchaseDate:'2024-09-10',originalName:'Nippon India Equity Opportunities AIF - Scheme 9',currentName:'Nippon India Equity Opportunities AIF - Scheme 9'},
+  // Girik Multicap Growth Equity Strategy (Prashant JT, folio 10810723) — PMS, inception 08/09/2023
+  // SEPARATE from ID 10 (Kotak Equity Opportunities Fund, folio 13523828)
+  {id:45,investor:'Prashant Bokaria',folio:'10810723',house:'Girik',fund:'Girik Multicap Growth Equity Strategy',category:'PMS',invested:20276970,units:0,navCost:0,currentNav:0,currentValue:21988804,type:'PMS',schemeCode:'',purchaseDate:'2023-09-08',originalName:'Girik Multicap Growth Equity Strategy',currentName:'Girik Multicap Growth Equity Strategy',soaDate:'2026-04-30'},
 ];
 
 const MEMBER_META = {
@@ -3457,6 +3460,18 @@ function renderSOACard(r, idx, container){
   if(noValue)  badge = `<span style="background:rgba(200,169,110,0.12);color:var(--accent);border:1px solid rgba(200,169,110,0.3);font-size:10px;font-family:var(--font-mono,monospace);padding:3px 9px;border-radius:4px">NO VALUATION</span>`;
 
   const matched = r.matchedId ? portfolioData.find(h=>h.id===r.matchedId) : null;
+  // Folio mismatch guard: warn when SOA folio differs from the matched holding's stored folio
+  const _soaFolio  = (r.folio||'').replace(/\s/g,'');
+  const _dashFolio = (matched?.folio||'').replace(/\s/g,'');
+  const folioMismatchBanner = (_soaFolio && _dashFolio && _soaFolio !== _dashFolio) ? `
+    <div style="background:rgba(224,167,0,0.12);border:1px solid rgba(200,169,110,0.55);border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:#C8A96E;margin-bottom:4px">&#x26A0; Folio mismatch — verify before updating</div>
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.6">
+        SOA folio <strong style="color:var(--text);font-family:var(--font-mono,monospace)">${sanitize(r.folio||'')}</strong>
+        doesn't match this entry's folio <strong style="color:var(--text);font-family:var(--font-mono,monospace)">${sanitize(matched?.folio||'')}</strong>.
+        These may be <em>different investments</em>. If so, close this card and use <strong>+ Add Fund</strong> to create a separate entry.
+      </div>
+    </div>` : '';
   const matchInfo = matched ? `<div style="font-size:10px;color:var(--green);margin-top:4px">✓ Matched to: ${sanitize(matched.originalName||matched.fund||'')} (ID ${matched.id})</div>` : '';
 
   const noteHtml = r.note ? `<div style="font-size:11px;color:var(--accent);background:rgba(200,169,110,0.07);border:1px solid rgba(200,169,110,0.2);border-radius:6px;padding:8px 10px;margin-top:10px">${sanitize(r.note)}</div>` : '';
@@ -3531,6 +3546,7 @@ function renderSOACard(r, idx, container){
         </div>
         <div style="font-size:11px;color:var(--accent);margin-top:8px">Confirm the values below and click <strong>Update Entry</strong> to overwrite with the latest figures from this SOA.</div>
       </div>
+      ${folioMismatchBanner}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div>
           <div class="modal-label">Fund Name</div>

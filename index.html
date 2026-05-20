@@ -3398,7 +3398,6 @@ function findPMSDuplicates(matchedId, soaFundName, investor){
   const GENERIC = new Set(['equity','growth','fund','strategy','india','direct','scheme','asset',
     'capital','wealth','management','advisors','pvt','ltd','pms','aif','the','and','for',
     'series','class','plan','option','regular','conservative','aggressive','moderate']);
-  // Collect significant words from both the SOA name AND the matched holding's name
   const allWords = [soaFundName, matched.originalName||matched.fund||'']
     .join(' ').toLowerCase().split(/\s+/)
     .filter(w=>w.length>3 && !GENERIC.has(w));
@@ -3416,8 +3415,6 @@ function findPMSDuplicates(matchedId, soaFundName, investor){
 }
 
 // ── One-click duplicate delete from the SOA success card ──────────────────
-// Delegates to confirmDelete (which handles localStorage + Sheets + renderAll)
-// and removes the row from the card if the user confirmed the deletion.
 async function _soaDuplicateDelete(dupId, btnEl){
   const before = portfolioData.length;
   await confirmDelete(dupId);
@@ -3438,9 +3435,17 @@ function matchHolding(folio, fundName, investor){
   if(fundName){
     const fn = fundName.toLowerCase();
     const inv = (investor||'').toLowerCase();
+    // Filter out generic words that appear in most MF/PMS names to avoid false positives
+    // (e.g. "Girik Multicap Growth Equity Strategy" sharing "growth"+"equity" with Mirae funds)
+    const _MATCH_GENERIC = new Set(['equity','growth','fund','strategy','india','direct',
+      'scheme','asset','capital','wealth','management','advisors','pvt','ltd','pms','aif',
+      'the','and','for','series','class','plan','option','regular','conservative',
+      'aggressive','moderate','large','mid','small','cap','debt','balanced','hybrid',
+      'multi','flexi','dynamic','opportunities','advantage','focused','value','index']);
     const byName = portfolioData.find(h=>{
       const hname = (h.originalName||h.fund||'').toLowerCase();
-      const words = fn.split(/\s+/).filter(w=>w.length>2);
+      const words = fn.split(/\s+/).filter(w=>w.length>2 && !_MATCH_GENERIC.has(w));
+      if(words.length === 0) return false;
       const matches = words.filter(w=>hname.includes(w)).length;
       if(matches < 2) return false;
       // If investor is known, require it to match to avoid cross-investor false positives

@@ -2283,6 +2283,7 @@ function renderTable(){
       : '<span style="color:var(--text-dim)">—</span>';
 
     const hasNameChange = h.currentName && h.currentName !== h.originalName;
+    const _isPMSAIF = h.type === 'PMS' || h.type === 'AIF';
     const tr=document.createElement('tr');
     tr.innerHTML=`
       <td>
@@ -2291,7 +2292,7 @@ function renderTable(){
       </td>
       <td>
         ${hasNameChange
-          ? `<div class="fund-name" style="color:var(--accent2)">${h.currentName}</div><span style="font-size:9px;color:var(--accent);font-family:var(--font-mono,monospace);background:rgba(200,169,110,0.12);padding:1px 5px;border-radius:3px;border:1px solid rgba(200,169,110,0.3)">RENAMED</span>`
+          ? `<div class="fund-name" style="color:var(--accent2)">${h.currentName}</div><span style="font-size:9px;color:var(--accent);font-family:var(--font-mono,monospace);background:rgba(200,169,110,0.12);padding:1px 5px;border-radius:3px;border:1px solid rgba(200,169,110,0.3)">${_isPMSAIF?'SOA NAME':'RENAMED'}</span>`
           : `<div style="font-size:12px;color:var(--text-dim)">—</div>`
         }
       </td>
@@ -3403,19 +3404,25 @@ function _soaLinkExisting(idx, matchedId){
 function findPMSDuplicates(matchedId, soaFundName, investor){
   const matched = portfolioData.find(h=>h.id===matchedId);
   if(!matched) return [];
+  // Include cap-style words — "multicap" from one strategy name shouldn't match another strategy
   const GENERIC = new Set(['equity','growth','fund','strategy','india','direct','scheme','asset',
     'capital','wealth','management','advisors','pvt','ltd','pms','aif','the','and','for',
-    'series','class','plan','option','regular','conservative','aggressive','moderate']);
+    'series','class','plan','option','regular','conservative','aggressive','moderate',
+    'multicap','largecap','midcap','smallcap','flexicap','flexi','smid','opportunities']);
   const allWords = [soaFundName, matched.originalName||matched.fund||'']
     .join(' ').toLowerCase().split(/\s+/)
     .filter(w=>w.length>3 && !GENERIC.has(w));
   const sigWords = [...new Set(allWords)];
   if(sigWords.length===0) return [];
+  // HUF parity — a HUF update should only surface HUF duplicate candidates, never non-HUF
+  const matchedIsHuf = (matched.investor||'').toLowerCase().includes('huf');
   const invFirst = (investor||'').toLowerCase().split(' ')[0];
   return portfolioData.filter(h=>{
     if(!h || h.id===matchedId) return false;
     const hType = (h.type||'').toUpperCase();
     if(!['PMS','AIF'].includes(hType)) return false;
+    const hIsHuf = (h.investor||'').toLowerCase().includes('huf');
+    if(matchedIsHuf !== hIsHuf) return false;   // HUF parity gate
     if(!h.investor.toLowerCase().includes(invFirst)) return false;
     const hname = (h.originalName||h.fund||'').toLowerCase();
     return sigWords.some(w=>hname.includes(w));
@@ -3882,7 +3889,18 @@ async function applySOACard(idx, state, matchedId){
       h.currentValue = val;
       h.soaDate      = date;
       if(invAmt > 0)  h.invested  = invAmt;
-      if(fname)       h.fund      = fname;
+      // PMS/AIF: preserve stored display name; record SOA name in currentName if different.
+      // MF: update fund name from SOA as usual.
+      if(fname){
+        if(h.type === 'PMS' || h.type === 'AIF'){
+          const _soaNameNorm   = fname.trim().toLowerCase();
+          const _storedNameNorm = (h.originalName || h.fund || '').trim().toLowerCase();
+          if(_soaNameNorm !== _storedNameNorm) h.currentName = fname;
+          // h.fund intentionally left unchanged for PMS/AIF — keeps display stable
+        } else {
+          h.fund = fname;
+        }
+      }
       if(inv)         h.investor  = inv;
       if(folio)       h.folio     = folio;
 
@@ -3907,10 +3925,10 @@ async function applySOACard(idx, state, matchedId){
         const _dups = findPMSDuplicates(matchedId, fname, inv);
         if(_dups.length > 0 && cardEl){
           const _dupRows = _dups.map(d=>`
-            <div class="soa-dup-row" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid rgba(200,169,110,0.15);gap:12px">
-              <div style="font-size:12px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sanitize(d.originalName||d.fund||'')} <span style="color:var(--text-muted);font-size:11px">· ${sanitize(shortName(d.investor))}</span></div>
-              <button class="btn-secondary" style="font-size:11px;padding:4px 10px;flex-shrink:0;border-color:rgba(224,123,106,0.4);color:var(--red)"
-                onclick="_soaDuplicateDelete(${d.id},this)">Delete</button>
+            <div class="soa-dup-row" style="display:flex;align-items:flex-start;justify-content:space-between;padding:7px 0;border-top:1px solid rgba(200,169,110,0.15);gap:8px">
+              <div style="font-size:12px;color:var(--text);flex:1;min-width:0;line-height:1.4">${sanitize(d.originalName||d.fund||'')} <span style="color:var(--text-muted);font-size:11px">· ${sanitize(shortName(d.investor))}</span></div>
+              <button class="btn-secondary" style="font-size:10px;padding:2px 8px;flex-shrink:0;white-space:nowrap;border-color:rgba(224,123,106,0.4);color:var(--red);margin-top:1px"
+                onclick="_soaDuplicateDelete(${d.id},this)">Del ×</button>
             </div>`).join('');
           const _dupBanner = document.createElement('div');
           _dupBanner.id = 'soa-dup-banner';

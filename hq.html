@@ -336,6 +336,35 @@ input{font-family:var(--font);}
     }
     @keyframes hqSpin{to{transform:rotate(360deg)}}
 
+  
+    /* ── Refresh All NAVs progress panel ──────────────────────────────────── */
+    .hq-refresh-panel{
+      position:fixed;bottom:80px;right:20px;width:340px;
+      background:var(--surface);border:1px solid var(--border2);
+      border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);
+      z-index:60;display:none;
+    }
+    .hq-refresh-panel.visible{display:block;}
+    .hq-refresh-title{font-size:12px;font-weight:600;margin-bottom:10px;
+      display:flex;align-items:center;justify-content:space-between;}
+    .hq-refresh-family{margin-bottom:8px;}
+    .hq-refresh-family-name{font-size:11px;color:var(--text-muted);
+      display:flex;justify-content:space-between;margin-bottom:3px;}
+    .hq-refresh-bar-track{height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;}
+    .hq-refresh-bar-fill{height:100%;background:var(--accent);border-radius:2px;
+      transition:width 0.2s ease;width:0%;}
+    .hq-refresh-bar-fill.done{background:var(--green);}
+    .hq-refresh-bar-fill.err{background:var(--red);}
+    .hq-refresh-summary{margin-top:10px;font-size:11px;color:var(--text-muted);
+      border-top:1px solid var(--border);padding-top:8px;}
+    .hq-nav-refresh-btn{
+      display:flex;align-items:center;gap:5px;padding:5px 11px;
+      border-radius:7px;background:var(--accent-dim);border:1px solid var(--accent-border);
+      color:var(--accent);font-size:11px;cursor:pointer;transition:all 0.15s;font-weight:600;
+    }
+    .hq-nav-refresh-btn:hover{background:rgba(200,169,110,0.25);}
+    .hq-nav-refresh-btn:disabled{opacity:0.5;cursor:not-allowed;}
+
   </style>
 </head>
 <body>
@@ -358,6 +387,9 @@ input{font-family:var(--font);}
     <div class="hq-header-actions" id="hqHeaderActions" style="display:none">
       <button class="hq-reload-btn" id="hqReloadBtn" onclick="hqReloadAll()" title="Re-read all family Sheets">
         ↻ Reload Data
+      </button>
+      <button class="hq-nav-refresh-btn" id="hqNavRefreshBtn" onclick="hqRefreshAllNAVs()" title="Fetch live NAVs for all families and update Sheets">
+        ⟳ Refresh All NAVs
       </button>
       <button class="hq-report-btn" onclick="openModal('hqReportModal')" title="Report an issue">
         ⚠ Report Issue
@@ -458,6 +490,18 @@ input{font-family:var(--font);}
       <button class="hq-modal-cancel" onclick="closeModal('hqReportModal')">Cancel</button>
     </div>
   </div>
+</div>
+
+
+<!-- ── Refresh All NAVs progress panel ───────────────────────────────────── -->
+<div class="hq-refresh-panel" id="hqRefreshPanel">
+  <div class="hq-refresh-title">
+    <span>⟳ Refreshing NAVs…</span>
+    <span id="hqRefreshClose" style="cursor:pointer;color:var(--text-dim);font-size:14px"
+      onclick="document.getElementById('hqRefreshPanel').classList.remove('visible')">×</span>
+  </div>
+  <div id="hqRefreshFamilies"></div>
+  <div class="hq-refresh-summary" id="hqRefreshSummary" style="display:none"></div>
 </div>
 
 <div class="modal-overlay" id="hqConnectModal">
@@ -663,7 +707,7 @@ async function loadFamilyData(family){
   if(!_token) return;
   try{
     // Load portfolio_snapshot tab
-    const snapUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/portfolio_snapshot!A:S?valueRenderOption=UNFORMATTED_VALUE`;
+    const snapUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/portfolio_snapshot!A:T?valueRenderOption=UNFORMATTED_VALUE`;
     const r = await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${_token}`}});
     if(!r.ok){ _familyData[family.name]={loaded:true, error: `HTTP ${r.status}`, holdings:[]}; return; }
     const data = await r.json();
@@ -1389,6 +1433,197 @@ async function hqSend(prefillText){
   }
 }
 
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REFRESH ALL NAVs — HQ-level cross-family NAV update
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function hqRefreshAllNAVs(){
+  const btn = document.getElementById('hqNavRefreshBtn');
+  const panel = document.getElementById('hqRefreshPanel');
+  const familiesEl = document.getElementById('hqRefreshFamilies');
+  const summaryEl = document.getElementById('hqRefreshSummary');
+  if(btn){ btn.disabled=true; }
+  panel.classList.add('visible');
+  summaryEl.style.display='none';
+
+  const active = FAMILIES.filter(f=>!f.comingSoon && f.sheetId);
+
+  // Render initial progress rows
+  familiesEl.innerHTML = active.map(f=>`
+    <div class="hq-refresh-family" id="hqRF_${f.name.replace(/\s/g,'_')}">
+      <div class="hq-refresh-family-name">
+        <span style="color:${f.color}">${f.name}</span>
+        <span id="hqRF_status_${f.name.replace(/\s/g,'_')}" style="color:var(--text-dim)">Reading…</span>
+      </div>
+      <div class="hq-refresh-bar-track">
+        <div class="hq-refresh-bar-fill" id="hqRF_bar_${f.name.replace(/\s/g,'_')}"></div>
+      </div>
+    </div>`).join('');
+
+  // Step 1: Read portfolio_snapshot for each active family (including units = col T = index 19)
+  const familySnapshots = {};
+  await Promise.allSettled(active.map(async f=>{
+    try{
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/portfolio_snapshot!A2:T5000?valueRenderOption=UNFORMATTED_VALUE`;
+      const r = await fetchWithTimeout(url,{headers:{Authorization:`Bearer ${_token}`}});
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      familySnapshots[f.name] = (d.values||[]).filter(row=>row&&row.length>=9);
+      setRefreshStatus(f.name, `${familySnapshots[f.name].length} holdings`,'var(--text-muted)');
+    }catch(e){
+      familySnapshots[f.name] = [];
+      setRefreshStatus(f.name,'Read failed','var(--red)');
+    }
+  }));
+
+  // Step 2: Collect all unique scheme codes across all families
+  const allCodes = new Set();
+  for(const rows of Object.values(familySnapshots)){
+    for(const row of rows){
+      const type=String(row[4]||'').trim();
+      const code=String(row[16]||'').trim();
+      if(type==='MF' && code && code!=='—') allCodes.add(code);
+    }
+  }
+  const codes = [...allCodes];
+  if(codes.length===0){
+    summaryEl.style.display='block';
+    summaryEl.textContent='⚠ No MF scheme codes found in snapshots. Open each family dashboard and Refresh NAVs once to populate.';
+    if(btn) btn.disabled=false;
+    return;
+  }
+
+  // Step 3: Batch-fetch NAVs (6 at a time, deduplicated across all families)
+  const navCache = {};
+  const BATCH = 6;
+  let fetched = 0;
+  for(let i=0;i<codes.length;i+=BATCH){
+    const batch = codes.slice(i,i+BATCH);
+    const results = await Promise.allSettled(batch.map(async code=>{
+      try{
+        const r = await fetchWithTimeout(`https://api.mfapi.in/mf/${code}/latest`,{},8000);
+        const d = await r.json();
+        const nav = parseFloat(d?.data?.[0]?.nav);
+        const date = d?.data?.[0]?.date||'';
+        if(!isNaN(nav) && nav>0) navCache[code] = {nav, date};
+      }catch(e){}
+    }));
+    fetched += batch.length;
+    // Update progress for all families proportionally
+    const pct = Math.round(fetched/codes.length*100);
+    active.forEach(f=>setRefreshBar(f.name, pct));
+  }
+
+  const navCount = Object.keys(navCache).length;
+
+  // Step 4: Apply fetched NAVs to each family's snapshot and write back
+  let totalUpdated = 0;
+  let needsUnitsMsg = [];
+
+  await Promise.allSettled(active.map(async f=>{
+    const rows = familySnapshots[f.name];
+    if(!rows.length){ setRefreshStatus(f.name,'No data','var(--red)'); return; }
+
+    let updated = 0; let noUnits = 0;
+    const newRows = rows.map(row=>{
+      const type=String(row[4]||'').trim();
+      const code=String(row[16]||'').trim();
+      if(type!=='MF'||!code||!navCache[code]) return row;
+
+      const {nav, date} = navCache[code];
+      const units = parseFloat(String(row[19]||'0').replace(/[,\s]/g,''))||0;
+
+      if(units > 0){
+        const newValue = units * nav;
+        const invested = parseFloat(String(row[7]||'0'))||0;
+        const gain = newValue - invested;
+        const gainPct = invested>0 ? ((gain/invested)*100).toFixed(2)+'%' : '—';
+        const newRow = [...row];
+        newRow[8]  = newValue.toFixed(2);
+        newRow[9]  = gain.toFixed(2);
+        newRow[10] = gainPct;
+        newRow[12] = nav.toFixed(4);
+        newRow[13] = date;
+        updated++;
+        return newRow;
+      } else {
+        // Units missing — just update navDate so it's fresh
+        const newRow = [...row];
+        newRow[12] = nav.toFixed(4);
+        newRow[13] = date;
+        noUnits++;
+        return newRow;
+      }
+    });
+
+    if(noUnits > 0) needsUnitsMsg.push(`${f.name}: ${noUnits} holdings missing units (open dashboard → Refresh NAVs once)`);
+
+    // Clear + rewrite portfolio_snapshot
+    try{
+      await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/portfolio_snapshot:clear`,
+        {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'}},12000
+      ).catch(()=>{});
+
+      // Rebuild header row
+      const headers=['As Of','Investor','Original Name','Current Name','Type','Category',
+        'Folio / Platform','Invested (₹)','Current Value (₹)','Gain/Loss (₹)','Return %',
+        'CAGR','NAV / Price','NAV Date','Purchase Date','Holding Period',
+        'Scheme Code / Ticker','Currency','USD Value','Units'];
+
+      const res = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/portfolio_snapshot!A1?valueInputOption=USER_ENTERED`,
+        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+         body:JSON.stringify({values:[headers,...newRows]})},20000
+      );
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      totalUpdated += updated;
+      setRefreshBar(f.name, 100, 'done');
+      setRefreshStatus(f.name,`✓ ${updated} updated`,'var(--green)');
+
+      // Update in-memory family data
+      if(_familyData[f.name]){
+        _familyData[f.name].holdings.forEach(h=>{
+          const match = newRows.find(r=>r[6]===h.folio&&r[1]===h.investor);
+          if(match) h.value = parseFloat(match[8])||h.value;
+        });
+        _familyData[f.name].totalValue = _familyData[f.name].holdings.reduce((s,h)=>s+(h.value||0),0);
+      }
+    }catch(e){
+      setRefreshBar(f.name,100,'err');
+      setRefreshStatus(f.name,`⚠ Write failed: ${e.message}`,'var(--red)');
+    }
+  }));
+
+  // Step 5: Update UI
+  renderAllFamilyCards();
+  updateTotalBar();
+
+  summaryEl.style.display='block';
+  const msgs = [];
+  msgs.push(`✓ ${totalUpdated} holdings refreshed across ${active.length} families · ${navCount}/${codes.length} NAVs fetched`);
+  if(needsUnitsMsg.length) msgs.push(...needsUnitsMsg);
+  summaryEl.innerHTML = msgs.join('<br>');
+  summaryEl.style.color = needsUnitsMsg.length ? 'var(--accent)' : 'var(--green)';
+
+  if(btn) btn.disabled=false;
+}
+
+function setRefreshStatus(familyName, text, color){
+  const el = document.getElementById(`hqRF_status_${familyName.replace(/\s/g,'_')}`);
+  if(el){ el.textContent=text; el.style.color=color||'var(--text-muted)'; }
+}
+
+function setRefreshBar(familyName, pct, state){
+  const el = document.getElementById(`hqRF_bar_${familyName.replace(/\s/g,'_')}`);
+  if(el){
+    el.style.width=pct+'%';
+    el.className='hq-refresh-bar-fill'+(state?' '+state:'');
+  }
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // RELOAD DATA

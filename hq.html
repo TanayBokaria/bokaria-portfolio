@@ -660,7 +660,42 @@ function hqSetConnected(yes){
   btn.style.background = yes ? 'rgba(107,191,143,0.15)' : '';
   btn.style.border = yes ? '1px solid rgba(107,191,143,0.3)' : '';
   btn.style.color = yes ? 'var(--green)' : '';
-  btn.onclick = yes ? ()=>{} : hqConnect;
+  btn.onclick = hqConnect; // always clickable — reconnect on session expiry
+}
+
+function hqShowSessionExpired(){
+  // Remove any existing banner
+  document.getElementById('hqSessionExpiredBanner')?.remove();
+  const banner = document.createElement('div');
+  banner.id = 'hqSessionExpiredBanner';
+  banner.style.cssText = `
+    position:fixed;top:56px;left:50%;transform:translateX(-50%);
+    background:#1e0a0a;border:1px solid rgba(239,68,68,0.5);border-radius:10px;
+    padding:14px 24px;display:flex;align-items:center;gap:16px;
+    z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.5);max-width:500px;
+  `;
+  banner.innerHTML = `
+    <span style="font-size:20px">🔒</span>
+    <div>
+      <div style="color:var(--red);font-weight:600;font-size:13px">Session expired</div>
+      <div style="color:var(--text-muted);font-size:12px;margin-top:2px">
+        Your Google sign-in has timed out (tokens expire after 1 hour).
+      </div>
+    </div>
+    <button onclick="document.getElementById('hqSessionExpiredBanner').remove();hqConnect();"
+      style="flex-shrink:0;padding:8px 16px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.4);
+             color:var(--red);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap">
+      Reconnect →
+    </button>
+  `;
+  document.body.appendChild(banner);
+  // Also update all family cards to show expired state
+  Object.keys(_familyData).forEach(name => {
+    if(_familyData[name]?.error?.includes('401') || !_familyData[name]) {
+      _familyData[name] = {loaded:true, error:'HTTP 401 — session expired', holdings:[]};
+    }
+  });
+  renderFamilyCards();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -709,7 +744,18 @@ async function loadFamilyData(family){
     // Load portfolio_snapshot tab
     const snapUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/portfolio_snapshot!A:T?valueRenderOption=UNFORMATTED_VALUE`;
     const r = await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${_token}`}});
-    if(!r.ok){ _familyData[family.name]={loaded:true, error: `HTTP ${r.status}`, holdings:[]}; return; }
+    if(!r.ok){
+      if(r.status === 401){
+        // Token expired — clear it and show reconnect banner
+        _token = null;
+        localStorage.removeItem(LS_TOKEN);
+        hqSetConnected(false);
+        hqShowSessionExpired();
+        return;
+      }
+      _familyData[family.name]={loaded:true, error: `HTTP ${r.status}`, holdings:[]};
+      return;
+    }
     const data = await r.json();
     const rows = (data.values||[]).slice(1); // skip header
 
@@ -788,11 +834,17 @@ function renderAllFamilyCards(){
         <div class="family-card-accent" style="background:${f.color}"></div>
         <div class="family-card-header">
           <span class="family-name">${f.name}</span>
-          <span class="family-badge stale">Error</span>
+          <span class="family-badge stale">ERROR</span>
         </div>
         <div style="color:var(--red);font-size:11px;margin-top:8px">${d.error}</div>
         <div style="font-size:10px;color:var(--text-dim);margin-top:6px">
-          Open the ${f.name} dashboard and refresh NAVs to sync data
+          ${d.error.includes('401')
+            ? 'Session expired — click <strong style="color:var(--accent)">Connected ✓</strong> above to reconnect'
+            : d.error.includes('403')
+            ? 'Permission denied — check that this Google account has access to the Sheet'
+            : d.error.includes('404')
+            ? 'Sheet not found — verify the Sheet ID in the config'
+            : 'Sheets read failed — check connection and try Reload Data'}
         </div>
       </div>`;
 
@@ -1468,13 +1520,16 @@ async function hqRefreshAllNAVs(){
     try{
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/portfolio_snapshot!A2:T5000?valueRenderOption=UNFORMATTED_VALUE`;
       const r = await fetchWithTimeout(url,{headers:{Authorization:`Bearer ${_token}`}});
-      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      if(!r.ok){
+        if(r.status === 401){ _token=null; localStorage.removeItem(LS_TOKEN); hqSetConnected(false); hqShowSessionExpired(); throw new Error('Session expired'); }
+        throw new Error(`HTTP ${r.status}`);
+      }
       const d = await r.json();
       familySnapshots[f.name] = (d.values||[]).filter(row=>row&&row.length>=9);
       setRefreshStatus(f.name, `${familySnapshots[f.name].length} holdings`,'var(--text-muted)');
     }catch(e){
       familySnapshots[f.name] = [];
-      setRefreshStatus(f.name,'Read failed','var(--red)');
+      setRefreshStatus(f.name, e.message==='Session expired' ? '🔒 Session expired' : 'Read failed','var(--red)');
     }
   }));
 
@@ -1696,7 +1751,16 @@ async function checkFamilyHealth(family){
 
   // 1. Data loaded?
   if(!d || d.error){
-    issues.push({level:'error', msg:`Cannot read Sheet: ${d?.error||'unknown'}`});
+    const err = d?.error || 'unknown';
+    if(err.includes('401')){
+      issues.push({level:'error', msg:'Session expired — click Connected ✓ to reconnect'});
+    } else if(err.includes('403')){
+      issues.push({level:'error', msg:'Permission denied — check Google account access'});
+    } else if(err.includes('404')){
+      issues.push({level:'error', msg:'Sheet not found — verify Sheet ID in config'});
+    } else {
+      issues.push({level:'error', msg:`Cannot read Sheet: ${err}`});
+    }
     return issues;
   }
   // 2. Has snapshot data?

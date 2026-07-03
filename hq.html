@@ -556,20 +556,23 @@ async function loadFamilyData(family){
   if(!_token) return;
   try{
     // Load portfolio_snapshot tab
-    const snapUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/portfolio_snapshot!A:H?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`;
+    const snapUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/portfolio_snapshot!A:S?valueRenderOption=UNFORMATTED_VALUE`;
     const r = await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${_token}`}});
     if(!r.ok){ _familyData[family.name]={loaded:true, error: `HTTP ${r.status}`, holdings:[]}; return; }
     const data = await r.json();
     const rows = (data.values||[]).slice(1); // skip header
 
+    // portfolio_snapshot columns (written by writePortfolioSnapshot):
+    // [0]timestamp [1]investor [2]originalName [3]currentName [4]type [5]category
+    // [6]folio [7]invested [8]currentValue [9]gain [10]gainPct [11]cagr [12]nav [13]navDate
     const holdings = rows.map(row=>({
-      id:       row[0],
-      fund:     row[1]||'',
-      investor: row[2]||'',
-      invested: parseFloat(row[3])||0,
-      value:    parseFloat(row[4])||0,
-      asOfDate: row[5]||'',
-      updatedBy:row[6]||'',
+      fund:     row[2]||row[3]||'',
+      investor: row[1]||'',
+      type:     row[4]||'MF',
+      folio:    row[6]||'',
+      invested: parseFloat(row[7])||0,
+      value:    parseFloat(row[8])||0,
+      asOfDate: row[13]||row[0]||'',
     })).filter(h=>h.fund&&h.investor);
 
     const totalValue    = holdings.reduce((s,h)=>s+(h.value||0), 0);
@@ -577,12 +580,11 @@ async function loadFamilyData(family){
 
     // Staleness alerts
     const alerts = [];
-    const now = Date.now();
     holdings.forEach(h=>{
-      if(!h.asOfDate || h.asOfDate==='—'){
-        alerts.push({priority:'high', fund:h.fund, investor:h.investor, msg:'No value date on record'});
-      } else if(h.value === 0 && h.invested > 0){
-        alerts.push({priority:'high', fund:h.fund, investor:h.investor, msg:'Current value is ₹0'});
+      if(h.value === 0 && h.invested > 0){
+        alerts.push({priority:'high', fund:h.fund, investor:h.investor, msg:'Current value is ₹0 — may need updating'});
+      } else if((h.type==='PMS'||h.type==='AIF') && (!h.asOfDate||h.asOfDate==='—')){
+        alerts.push({priority:'medium', fund:h.fund, investor:h.investor, msg:'No value date on record'});
       }
     });
 

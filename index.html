@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-03T18:27:09Z -->
+<!-- build: 2026-07-03T18:49:21Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -4002,9 +4002,11 @@ async function confirmDelete(id){
   lastRefreshed = new Date();
 
   // Log deletion to Sheets
-  if(sheetsConnected) await logDeletionToSheets(h);
-
-  renderAll();
+      if(sheetsConnected) await logDeletionToSheets(h);
+      renderAll();
+    },
+    {confirmText:'Remove', danger:true, icon:'🗑️', fundLine: h.originalName||h.fund||''}
+  );
 }
 
 async function logDeletionToSheets(h){

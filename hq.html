@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-03T17:52:15Z -->
+<!-- build: 2026-07-03T17:57:47Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1626,17 +1626,25 @@ function renderHqDiff(extraction, fileName){
       <span id="hdStatus" style="font-size:11px;color:var(--text-muted)">Uncheck rows to skip, then Apply.</span>
       <div style="display:flex;gap:8px">
         <button class="hq-diff-cancel" onclick="this.closest('.hq-diff-card').remove();hqAppendMsg('ai','Cancelled — no changes made.')">Cancel</button>
-        <button class="hq-diff-apply" onclick="applyHqDiff(this.closest('.hq-diff-card'),${JSON.stringify(JSON.stringify(diff))})">Apply Selected</button>
+        <button class="hq-diff-apply" onclick="applyHqDiff(this.closest('.hq-diff-card'))">Apply Selected</button>
       </div>
     </div>`;
+
+  // Store diff by card ID to avoid JSON-in-attribute quoting issues
+  if(!window._hqDiffs) window._hqDiffs = {};
+  const diffKey = 'diff_' + Date.now();
+  window._hqDiffs[diffKey] = diff;
+  card.dataset.diffKey = diffKey;
 
   const wrap=document.createElement('div'); wrap.className='hq-msg ai'; wrap.appendChild(card);
   thread.appendChild(wrap); thread.scrollTop=thread.scrollHeight;
   document.getElementById('hqThreadWrap').classList.add('open');
 }
 
-async function applyHqDiff(cardEl, diffStr){
-  const diff = JSON.parse(diffStr);
+async function applyHqDiff(cardEl){
+  const diffKey = cardEl.dataset.diffKey;
+  const diff = (window._hqDiffs && diffKey) ? window._hqDiffs[diffKey] : null;
+  if(!diff){ console.error('applyHqDiff: diff not found for key', diffKey); return; }
   const statusEl = cardEl.querySelector('#hdStatus');
   const applyBtn = cardEl.querySelector('.hq-diff-apply');
   applyBtn.disabled=true;

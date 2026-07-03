@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-03T17:05:38Z -->
+<!-- build: 2026-07-03T17:31:59Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -197,6 +197,50 @@ input{font-family:var(--font);}
   padding:9px 18px;font-size:12px;font-weight:600;color:#1a1209;flex-shrink:0;
 }
 .hq-ai-send:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* ── Fix → action animations ─────────────────────────────────────── */
+@keyframes hqInputFlash{
+  0%  {box-shadow:0 0 0 0 transparent;border-color:var(--border2);}
+  25% {box-shadow:0 0 0 3px var(--accent);border-color:var(--accent);}
+  60% {box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 15%,transparent);}
+  100%{box-shadow:0 0 0 0 transparent;border-color:var(--border2);}
+}
+@keyframes hqAttachPulse{
+  0%,100%{transform:scale(1);background:var(--surface2);color:var(--text-muted);}
+  20%    {transform:scale(1.25);background:var(--accent);color:#1a1209;border-color:var(--accent);}
+  40%    {transform:scale(0.95);}
+  60%    {transform:scale(1.15);background:var(--accent);color:#1a1209;}
+  80%    {transform:scale(1.02);}
+}
+@keyframes hqHintSlide{
+  from{opacity:0;transform:translateY(6px);}
+  to  {opacity:1;transform:translateY(0);}
+}
+.hq-ai-input.hq-flashing{animation:hqInputFlash 1s ease-out;}
+.hq-ai-attach.hq-pulsing{animation:hqAttachPulse 0.7s ease-in-out 3;}
+.hq-fix-hint{
+  display:none;align-items:flex-start;gap:8px;
+  background:var(--surface2);border:1px solid var(--accent);border-radius:8px;
+  padding:9px 12px;font-size:12px;color:var(--text);
+  animation:hqHintSlide 0.25s ease-out;
+}
+.hq-fix-hint.visible{display:flex;}
+.hq-fix-hint-icon{font-size:15px;flex-shrink:0;margin-top:1px;}
+.hq-fix-hint-body{flex:1;line-height:1.5;}
+.hq-fix-hint-title{font-weight:600;color:var(--accent);font-size:11px;
+  text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;}
+.hq-fix-hint-text{color:var(--text-muted);}
+.hq-fix-hint-action{
+  display:inline-block;margin-top:5px;font-size:11px;font-weight:600;
+  color:var(--accent);cursor:pointer;text-decoration:underline;
+  text-underline-offset:2px;
+}
+.hq-fix-hint-close{
+  flex-shrink:0;background:none;border:none;color:var(--text-dim);
+  font-size:14px;cursor:pointer;padding:0 2px;line-height:1;
+  margin-top:1px;
+}
+.hq-fix-hint-close:hover{color:var(--text);}
 
 /* AI message bubbles */
 .hq-msg{display:flex;gap:8px;align-items:flex-start;}
@@ -442,6 +486,15 @@ input{font-family:var(--font);}
         onclick="clearHqRouting()" style="cursor:pointer">✕</span>
     </div>
     <div class="hq-ai-file-chips" id="hqFileChips" style="display:none"></div>
+    <div class="hq-fix-hint" id="hqFixHint">
+      <div class="hq-fix-hint-icon" id="hqFixHintIcon">📎</div>
+      <div class="hq-fix-hint-body">
+        <div class="hq-fix-hint-title" id="hqFixHintTitle"></div>
+        <div class="hq-fix-hint-text" id="hqFixHintText"></div>
+        <span class="hq-fix-hint-action" id="hqFixHintAction" style="display:none"></span>
+      </div>
+      <button class="hq-fix-hint-close" onclick="hqHideFixHint()" title="Dismiss">✕</button>
+    </div>
     <div class="hq-ai-input-row">
       <button class="hq-ai-attach" id="hqAttachBtn" title="Attach file"
         onclick="document.getElementById('hqFileInput').click()">📎</button>
@@ -1006,12 +1059,128 @@ function updateTotalBar(){
   document.getElementById('hqTotalBar').style.display = 'flex';
 }
 
+function _classifyAlert(alert){
+  const m = (alert.msg||'').toLowerCase();
+  if(m.includes('no soa date'))            return 'soa_missing';
+  if(m.includes('days old') && m.includes('upload')) return 'soa_stale';
+  if(m.includes('₹0') || m.includes('current value is ₹0')) return 'zero_value';
+  if(m.includes('no value date'))          return 'no_date';
+  if(m.includes('consecutive cycles') || m.includes('scheme code') || m.includes('nav fetch')) return 'scheme_code';
+  return 'general';
+}
+
+function hqShowFixHint(icon, title, text, actionLabel, actionFn){
+  const hint = document.getElementById('hqFixHint');
+  document.getElementById('hqFixHintIcon').textContent  = icon;
+  document.getElementById('hqFixHintTitle').textContent = title;
+  document.getElementById('hqFixHintText').textContent  = text;
+  const actionEl = document.getElementById('hqFixHintAction');
+  if(actionLabel){
+    actionEl.textContent = actionLabel;
+    actionEl.onclick     = actionFn || null;
+    actionEl.style.display = 'inline-block';
+  } else {
+    actionEl.style.display = 'none';
+  }
+  hint.classList.add('visible');
+}
+
+function hqHideFixHint(){
+  document.getElementById('hqFixHint').classList.remove('visible');
+}
+
+function _hqFlashInput(){
+  const el = document.getElementById('hqInput');
+  el.classList.remove('hq-flashing');
+  void el.offsetWidth;
+  el.classList.add('hq-flashing');
+  el.addEventListener('animationend', () => el.classList.remove('hq-flashing'), {once:true});
+}
+
+function _hqPulseAttach(){
+  const el = document.getElementById('hqAttachBtn');
+  el.classList.remove('hq-pulsing');
+  void el.offsetWidth;
+  el.classList.add('hq-pulsing');
+  el.addEventListener('animationend', () => el.classList.remove('hq-pulsing'), {once:true});
+}
+
 function hqQuickAction(alert){
-  const msg = `The ${alert.fund} (${alert.investor}) needs attention: ${alert.msg}. Can you help me fix this?`;
-  document.getElementById('hqInput').value = msg;
-  document.getElementById('hqInput').focus();
-  _routedFamily = alert.family;
-  showHqRouting(alert.family);
+  const {fund, investor, msg, family} = alert;
+  const type = _classifyAlert(alert);
+  const inv  = shortInv(investor||'');
+  const fam  = FAMILIES.find(f=>f.name===family);
+  const dashUrl = fam?.dashUrl || '';
+
+  // Route AI bar to this family
+  _routedFamily = family;
+  showHqRouting(family);
+
+  // Scroll AI widget into view smoothly
+  document.querySelector('.hq-ai-input-area')?.scrollIntoView({behavior:'smooth', block:'end'});
+
+  // Build context-specific hint + input text
+  let icon='📎', hintTitle='', hintText='', actionLabel='', actionFn=null, inputText='', needsFile=false;
+
+  if(type==='soa_missing'){
+    needsFile  = true;
+    icon       = '📎';
+    hintTitle  = 'SOA PDF required';
+    hintText   = `${fund} (${inv}) has no Statement of Account on record — its current value is unknown. Attach the latest SOA PDF from your broker below and I'll extract and update the value.`;
+    inputText  = `Please extract the current value from the attached SOA for ${fund} (${inv})`;
+  }
+  else if(type==='soa_stale'){
+    needsFile  = true;
+    const days = (msg.match(/(\d+) days old/) || [])[1] || '';
+    icon       = '📎';
+    hintTitle  = `SOA is ${days} days old — update needed`;
+    hintText   = `Attach the latest SOA PDF for ${fund} (${inv}) below and I'll update the current value and date.`;
+    inputText  = `Please update ${fund} (${inv}) from the attached SOA`;
+  }
+  else if(type==='zero_value'){
+    needsFile  = true;
+    icon       = '📎';
+    hintTitle  = 'Current value is ₹0';
+    hintText   = `${fund} (${inv}) shows no current value. Either attach the latest SOA PDF and I'll extract it, or just type the value — e.g. "Current value is ₹45.32 lakh as of 30 Jun 2026".`;
+    inputText  = `The current value of ${fund} (${inv}) is ₹`;
+  }
+  else if(type==='no_date'){
+    needsFile  = true;
+    icon       = '📎';
+    hintTitle  = 'No value date on record';
+    hintText   = `${fund} (${inv}) is missing its last SOA date. Attach the latest SOA PDF and I'll extract the current value and update the date.`;
+    inputText  = `Please extract the value and date from the attached SOA for ${fund} (${inv})`;
+  }
+  else if(type==='scheme_code'){
+    needsFile  = false;
+    icon       = '⚠';
+    hintTitle  = 'Scheme code failing — fix in dashboard';
+    hintText   = `${fund} has been failing NAV auto-refresh for multiple cycles. Open the ${family} dashboard → Data Freshness card → click the red "⚠ fetch failed" line → use Fix Code ✎ to correct the AMFI scheme code.`;
+    actionLabel = `Open ${family} Dashboard →`;
+    actionFn   = dashUrl ? ()=>window.open(dashUrl,'_blank') : null;
+    inputText  = `What is the correct AMFI scheme code for ${fund}? It's been failing NAV refresh.`;
+  }
+  else {
+    icon       = '⚡';
+    hintTitle  = 'Action needed';
+    hintText   = `${fund} (${inv}): ${msg}`;
+    inputText  = `${fund} (${inv}) needs attention: ${msg}. How should we fix this?`;
+  }
+
+  // Show hint banner
+  hqShowFixHint(icon, hintTitle, hintText, actionLabel, actionFn);
+
+  // Set input text
+  document.getElementById('hqInput').value = inputText;
+
+  // Animate the input field
+  setTimeout(_hqFlashInput, 200);
+
+  // Pulse the attach button if file is needed
+  if(needsFile) setTimeout(_hqPulseAttach, 400);
+
+  // Focus input after scroll settles
+  setTimeout(()=>document.getElementById('hqInput').focus(), 350);
 }
 
 function showHqRouting(family){
@@ -1503,6 +1672,7 @@ async function applyHqDiff(cardEl, diffStr){
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function hqSend(prefillText){
+  hqHideFixHint();
   const inputEl=document.getElementById('hqInput');
   const sendBtn=document.getElementById('hqSendBtn');
   const userText=(prefillText||inputEl?.value||'').trim();

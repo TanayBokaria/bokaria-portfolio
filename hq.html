@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-03T17:57:47Z -->
+<!-- build: 2026-07-03T18:05:09Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -308,6 +308,18 @@ input{font-family:var(--font);}
 .hq-diff-apply-row{padding:10px 12px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);}
 .hq-diff-apply{background:var(--accent);border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:600;color:#1a1209;}
 .hq-diff-cancel{background:none;border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text-muted);}
+.hq-apply-progress-wrap{height:3px;background:var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden;display:none;}
+.hq-apply-progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width 0.3s ease;width:0%;}
+.hq-apply-progress-wrap.active{display:block;}
+.hq-apply-result{padding:10px 12px;font-size:12px;font-weight:600;border-radius:0 0 8px 8px;display:none;}
+.hq-apply-result.ok{background:color-mix(in srgb,var(--green) 12%,transparent);color:var(--green);}
+.hq-apply-result.err{background:color-mix(in srgb,var(--red) 10%,transparent);}
+.hq-apply-result.err .hq-apply-err-line{font-size:11px;color:var(--red);margin-top:2px;}
+.hq-confirm-card.saving{opacity:0.7;pointer-events:none;}
+.hq-confirm-saving-row{font-size:11px;color:var(--text-muted);display:none;align-items:center;gap:6px;margin-top:6px;}
+.hq-confirm-card.saving .hq-confirm-saving-row{display:flex;}
+@keyframes hqReloadOk{0%{color:var(--text-muted)}40%{color:var(--green)}100%{color:var(--text-muted)}}
+.hq-reload-ok{animation:hqReloadOk 1.8s ease;}
 
 /* Modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
@@ -1330,8 +1342,9 @@ function renderHqResponse(result, userInput){
   if(result.requires_clarification){
     let html = `${result.response_text||result.clarification_question||'Could you clarify?'}`;
     if(result.options?.length){
-      html += `<div class="hq-options">${result.options.map(o=>
-        `<button class="hq-opt" onclick="hqSend(${JSON.stringify(o)})">${o}</button>`).join('')}</div>`;
+      window._hqOptions = result.options;
+      html += `<div class="hq-options">${result.options.map((o,i)=>
+        `<button class="hq-opt" onclick="hqSendOpt(${i})">${o.replace(/</g,'&lt;')}</button>`).join('')}</div>`;
     }
     hqAppendMsg('ai', html);
     return;
@@ -1354,9 +1367,14 @@ function renderHqResponse(result, userInput){
       </div>`:''}
       <div class="hq-confirm-detail">${result.action_preview}</div>
       <div class="hq-confirm-actions">
-        <button class="hq-confirm-ok" onclick="executeHqAction(${JSON.stringify(JSON.stringify(result))},this.closest('.hq-confirm-card'))">Confirm</button>
+        <button class="hq-confirm-ok" onclick="executeHqAction(this.dataset.ck,this.closest('.hq-confirm-card'))">Confirm</button>
         <button class="hq-confirm-cancel" onclick="this.closest('.hq-confirm-card').remove();hqAppendMsg('ai','Cancelled — no changes made.')">Cancel</button>
-      </div>`;
+      </div>
+      <div class="hq-confirm-saving-row"><div class="hq-spinner"></div><span>Saving to Sheets…</span></div>`;
+    if(!window._hqConfirms) window._hqConfirms = {};
+    const ck = 'ck_' + Date.now();
+    window._hqConfirms[ck] = result;
+    card.querySelector('.hq-confirm-ok').dataset.ck = ck;
     const wrap = document.createElement('div');
     wrap.className='hq-msg ai';
     wrap.appendChild(card);
@@ -1366,16 +1384,27 @@ function renderHqResponse(result, userInput){
   }
 }
 
-async function executeHqAction(resultStr, cardEl){
-  const result = JSON.parse(resultStr);
-  if(cardEl) cardEl.remove();
+async function executeHqAction(confirmKey, cardEl){
+  const result = (window._hqConfirms && confirmKey) ? window._hqConfirms[confirmKey] : null;
+  if(!result){ hqAppendMsg('error','⚠ Action data not found — please try again.'); return; }
+
+  // Show saving state inside card (don't remove yet)
+  if(cardEl){
+    cardEl.classList.add('saving');
+    const okBtn = cardEl.querySelector('.hq-confirm-ok');
+    if(okBtn){ okBtn.disabled=true; okBtn.textContent='Saving…'; }
+    const cancelBtn = cardEl.querySelector('.hq-confirm-cancel');
+    if(cancelBtn) cancelBtn.disabled=true;
+  }
 
   const fam = getFamilyConfig(result.family);
   if(!fam || fam.comingSoon){
+    if(cardEl) cardEl.closest('.hq-msg')?.remove();
     hqAppendMsg('error','⚠ This family\'s dashboard is not yet set up. No changes were made.');
     return;
   }
   if(!_token){
+    if(cardEl) cardEl.closest('.hq-msg')?.remove();
     hqAppendMsg('error','⚠ Not connected to Sheets. Click Connect Sheets and try again.');
     return;
   }
@@ -1383,10 +1412,10 @@ async function executeHqAction(resultStr, cardEl){
   if(result.intent === 'update_value'){
     const d = _familyData[fam.name];
     if(!d?.holdings.length){
-      hqAppendMsg('error',`⚠ No portfolio data loaded for ${fam.name}. ${!_token ? 'Session expired — click Connected ✓ to reconnect.' : 'Open the '+fam.name+' dashboard, connect Sheets, and Refresh NAVs to sync data.'}`);
+      if(cardEl) cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('error',`⚠ No portfolio data loaded for ${fam.name}. Open the ${fam.name} dashboard, connect Sheets, and Refresh NAVs to sync.`);
       return;
     }
-    // Find the holding row number in portfolio_snapshot
     const match = d.holdings.find(h=>{
       const fundOk = result.fund_match && (
         h.fund.toLowerCase().includes(result.fund_match.toLowerCase().slice(0,15)) ||
@@ -1396,33 +1425,31 @@ async function executeHqAction(resultStr, cardEl){
       return fundOk && invOk;
     });
     if(!match){
-      hqAppendMsg('error',`⚠ Could not find this holding in the ${fam.name} portfolio snapshot. Try opening the ${fam.name} dashboard directly.`);
+      if(cardEl) cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('error',`⚠ Could not find "${result.fund_match}" in the ${fam.name} portfolio snapshot. Open the ${fam.name} dashboard directly to update it.`);
       return;
     }
 
-    // Find row index in Sheet (header is row 1, data starts row 2)
     const rowIdx = d.holdings.indexOf(match) + 2;
-    const today = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+    const today  = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+    // Write to col I (Current Value), J (Gain), K (Return%) — NOT col E:G
+    const gain   = (result.new_value||0) - (match.invested||0);
+    const retPct = match.invested > 0 ? ((gain/match.invested)*100).toFixed(2)+'%' : '—';
 
     try{
-      // Update currentValue (col E = index 5) and asOfDate (col F = index 6) and updatedBy (col G = index 7)
-      const range = `portfolio_snapshot!E${rowIdx}:G${rowIdx}`;
       const res = await fetchWithTimeout(
-        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/${range}?valueInputOption=USER_ENTERED`,
-        {
-          method:'PUT',
-          headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
-          body: JSON.stringify({values:[[result.new_value, today, 'HQ AI']]})
-        }
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!I${rowIdx}:K${rowIdx}?valueInputOption=USER_ENTERED`,
+        { method:'PUT', headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+          body: JSON.stringify({values:[[String(result.new_value), gain.toFixed(2), retPct]]}) }
       );
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       match.value = result.new_value;
       match.asOfDate = today;
-      renderAllFamilyCards();
-      renderActionQueue();
-      updateTotalBar();
-      hqAppendMsg('ai',`✓ Updated <strong>${match.fund}</strong> (${shortInv(match.investor)}) to <strong>${fmtCr(result.new_value)}</strong> in the ${fam.name} Sheet.`);
+      renderAllFamilyCards(); renderActionQueue(); updateTotalBar();
+      if(cardEl) cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('ai',`<span style="color:var(--green)">✓</span> Updated <strong>${match.fund}</strong> (${shortInv(match.investor)}) to <strong style="color:var(--green)">${fmtCr(result.new_value)}</strong> in the ${fam.name} Sheet.`);
     }catch(e){
+      if(cardEl){ cardEl.classList.remove('saving'); const ok=cardEl.querySelector('.hq-confirm-ok'); if(ok){ok.disabled=false;ok.textContent='Retry';} const cn=cardEl.querySelector('.hq-confirm-cancel'); if(cn) cn.disabled=false; }
       hqAppendMsg('error',`⚠ Save failed: ${e.message}`);
     }
     return;
@@ -1641,52 +1668,105 @@ function renderHqDiff(extraction, fileName){
   document.getElementById('hqThreadWrap').classList.add('open');
 }
 
+function hqSendOpt(i){ hqSend((window._hqOptions||[])[i]||''); }
+
 async function applyHqDiff(cardEl){
   const diffKey = cardEl.dataset.diffKey;
   const diff = (window._hqDiffs && diffKey) ? window._hqDiffs[diffKey] : null;
   if(!diff){ console.error('applyHqDiff: diff not found for key', diffKey); return; }
-  const statusEl = cardEl.querySelector('#hdStatus');
-  const applyBtn = cardEl.querySelector('.hq-diff-apply');
-  applyBtn.disabled=true;
-  if(!_token){ statusEl.style.color='var(--red)'; statusEl.textContent='⚠ Not connected to Sheets.'; applyBtn.disabled=false; return; }
 
-  let applied=0, failed=0, skipped=0;
+  const applyBtn = cardEl.querySelector('.hq-diff-apply');
+  const cancelBtn= cardEl.querySelector('.hq-diff-cancel');
+  const applyRow = cardEl.querySelector('.hq-diff-apply-row');
+  applyBtn.disabled=true;
+  if(cancelBtn) cancelBtn.disabled=true;
+
+  if(!_token){
+    applyRow.innerHTML='<div style="color:var(--red);font-size:12px;font-weight:600">⚠ Not connected to Sheets — reconnect and try again.</div>';
+    applyBtn.disabled=false; if(cancelBtn) cancelBtn.disabled=false;
+    return;
+  }
+
+  // Show progress bar
+  const progWrap = document.createElement('div'); progWrap.className='hq-apply-progress-wrap active';
+  const progFill = document.createElement('div'); progFill.className='hq-apply-progress-fill';
+  progWrap.appendChild(progFill); cardEl.prepend(progWrap);
+  applyRow.innerHTML='<span style="font-size:11px;color:var(--text-muted)">Saving…</span>';
+
+  const totalItems = diff.update.filter((_,i)=>cardEl.querySelector(`#hd_upd_${i}`)?.checked).length
+    + diff.newItems.filter((_,i)=>cardEl.querySelector(`#hd_new_${i}`)?.checked).length;
+  let done=0, applied=0, failed=0, skipped=0;
   const errors=[];
+
+  const setProgress = (label) => {
+    const pct = totalItems > 0 ? Math.round(done/totalItems*100) : 0;
+    progFill.style.width = pct+'%';
+    applyRow.innerHTML=`<span style="font-size:11px;color:var(--text-muted)">${label}</span>`;
+  };
+
+  const today=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 
   for(const [i,item] of diff.update.entries()){
     const chk=cardEl.querySelector(`#hd_upd_${i}`); if(!chk?.checked){skipped++;continue;}
-    const fam=getFamilyConfig(item._detectedFamily); if(!fam){errors.push(`Unknown family for ${item.fund_name}`);failed++;continue;}
-    statusEl.textContent=`Saving ${item.fund_name}…`;
-    const fd=_familyData[fam.name]; const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2;
-    const today=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+    const fam=getFamilyConfig(item._detectedFamily);
+    if(!fam){errors.push(`Unknown family for ${item.fund_name}`);failed++;done++;setProgress(`Failed: ${item.fund_name}`);continue;}
+    setProgress(`Saving ${item._existing?.fund||item.fund_name}…`);
+    const fd=_familyData[fam.name];
+    const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2;
+    // Write to col I (Current Value), J (Gain), K (Return%) — cols are 1-based I=9
+    const gain   = (item._proposedValue||0) - (item._existing?.invested||0);
+    const retPct = item._existing?.invested > 0 ? ((gain/item._existing.invested)*100).toFixed(2)+'%' : '—';
     try{
-      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!E${rowIdx}:G${rowIdx}?valueInputOption=USER_ENTERED`,
-        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[[item._proposedValue,today,'HQ AI']]})});
+      const res=await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!I${rowIdx}:K${rowIdx}?valueInputOption=USER_ENTERED`,
+        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+         body:JSON.stringify({values:[[String(item._proposedValue), gain.toFixed(2), retPct]]})});
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       item._existing.value=item._proposedValue; applied++;
-    }catch(e){errors.push(`${item.fund_name}: ${e.message}`);failed++;}
+    }catch(e){errors.push(`${item._existing?.fund||item.fund_name}: ${e.message}`);failed++;}
+    done++; setProgress(done < totalItems ? `Saved ${done}/${totalItems}…` : 'Finishing…');
   }
 
   for(const [i,item] of diff.newItems.entries()){
     const chk=cardEl.querySelector(`#hd_new_${i}`); if(!chk?.checked){skipped++;continue;}
-    const fam=getFamilyConfig(item._detectedFamily); if(!fam){errors.push(`Unknown family for ${item.fund_name}`);failed++;continue;}
-    statusEl.textContent=`Adding ${item.fund_name}…`;
-    const row=[Date.now(),item.fund_name,item.investor,'MF','Equity','',item.folio||'',item.invested_value||0,item.current_value||0,'','','','','',item.as_of_date||new Date().toLocaleDateString('en-IN'),'',item.fund_name,''];
+    const fam=getFamilyConfig(item._detectedFamily);
+    if(!fam){errors.push(`Unknown family for ${item.fund_name}`);failed++;done++;setProgress(`Failed: ${item.fund_name}`);continue;}
+    setProgress(`Adding ${item.fund_name}…`);
+    const row=[today,item.investor,item.fund_name,item.fund_name,item.type||'MF',item.type||'MF',
+      item.folio||'',item.invested_value||0,item.current_value||0,'','','','',item.as_of_date||today,'','',item.fund_name,'','0'];
     try{
-      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      const res=await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
         {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[row]})});
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       applied++;
     }catch(e){errors.push(`${item.fund_name}: ${e.message}`);failed++;}
+    done++; setProgress(done < totalItems ? `Saved ${done}/${totalItems}…` : 'Finishing…');
   }
 
   skipped += diff.duplicate.filter((_,i)=>!cardEl.querySelector(`#hd_dup_${i}`)?.checked).length;
-
   if(applied>0){renderAllFamilyCards();renderActionQueue();updateTotalBar();}
-  const applyRow=cardEl.querySelector('.hq-diff-apply-row');
-  applyRow.innerHTML=errors.length
-    ?`<div style="width:100%"><div style="color:var(--accent);font-size:12px;font-weight:600">✓ ${applied} applied · ${failed} failed · ${skipped} skipped</div>${errors.map(e=>`<div style="font-size:11px;color:var(--red);margin-top:2px">⚠ ${e}</div>`).join('')}</div>`
-    :`<div style="color:var(--green);font-size:12px;font-weight:600;width:100%">✓ Done — ${applied} change${applied!==1?'s':''} applied${skipped?`, ${skipped} skipped`:''}</div>`;
+
+  // Final state
+  progFill.style.width='100%';
+  progFill.style.background = errors.length ? 'var(--red)' : 'var(--green)';
+  setTimeout(()=>progWrap.remove(), 600);
+
+  if(errors.length){
+    applyRow.innerHTML=`
+      <div style="width:100%">
+        <div style="color:var(--accent);font-size:12px;font-weight:600">
+          ${applied>0?`<span style="color:var(--green)">✓ ${applied} saved</span> · `:''}<span style="color:var(--red)">⚠ ${failed} failed</span>${skipped?` · ${skipped} skipped`:''}
+        </div>
+        ${errors.map(e=>`<div style="font-size:11px;color:var(--red);margin-top:3px">⚠ ${e}</div>`).join('')}
+      </div>`;
+  } else {
+    applyRow.innerHTML=`
+      <div style="color:var(--green);font-size:13px;font-weight:600;width:100%;display:flex;align-items:center;gap:6px">
+        <span style="font-size:16px">✓</span>
+        Done — ${applied} change${applied!==1?'s':''} saved to Sheets${skipped?` · ${skipped} skipped`:''}
+      </div>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1964,7 +2044,13 @@ async function hqReloadAll(){
   renderActionQueue();
   updateTotalBar();
   runHqHealthChecks();
-  if(btn){ btn.classList.remove('loading'); btn.textContent = '↻ Reload Data'; btn.disabled = false; }
+  if(btn){
+    btn.classList.remove('loading');
+    const loaded = FAMILIES.filter(f=>!f.comingSoon).reduce((s,f)=>s+(_familyData[f.name]?.holdings?.length||0),0);
+    btn.textContent = '✓ Reloaded';
+    btn.classList.add('hq-reload-ok');
+    setTimeout(()=>{ btn.textContent='↻ Reload Data'; btn.classList.remove('hq-reload-ok'); btn.disabled=false; }, 1800);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

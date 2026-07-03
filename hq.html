@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-03T17:39:13Z -->
+<!-- build: 2026-07-03T17:52:15Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1512,6 +1512,14 @@ async function extractAndDiff(file, userContext){
 
   const sysPrompt = `You are extracting investment holdings from a file for the Bokaria family portfolio.
 KNOWN INVESTORS: ${allInvestors}
+SPECIAL FORMAT — GIRIK PMS STATEMENT: If the file has columns "HDFC FA CODE" and "Account Name" where Account Name contains "[NAME] JT MULTICAP" or "[NAME] HUF MULTICAP", this is a Girik PMS Excel statement. Rules for this format:
+- fund_name = "Girik Multicap Growth Equity Strategy" for ALL rows
+- folio = the value in "HDFC FA CODE" column (e.g. 10810722)
+- investor = extract person name from Account Name: "SHALINI BOKARIA JT MULTICAP" → "Shalini Bokaria", "PRASHANT BOKARIA HUF MULTICAP" → "Prashant Bokaria HUF", "TANVI BOKARIA JT MULTICAP" → "Tanvi Bokaria", "PRASHANT BOKARIA JT MULTICAP" → "Prashant Bokaria"
+- current_value = "Market Value" column
+- invested_value = "Net Capital" column
+- type = "PMS"
+- family_detected = "Prashant"
 Extract ALL holdings. Return ONLY valid JSON (no markdown):
 {"family_detected":"Prashant"|"Piyush"|"Prabin"|"Umed Singh"|null,"extracted_holdings":[{"investor":string,"fund_name":string,"type":"MF"|"PMS"|"AIF"|"Other","folio":string,"current_value":number,"invested_value":number,"as_of_date":string}],"confidence":"high"|"medium"|"low","notes":string}`;
 
@@ -1557,6 +1565,8 @@ function renderHqDiff(extraction, fileName){
     const fd = detectedFam ? _familyData[detectedFam] : null;
     if(!fd?.holdings.length){ diff.newItems.push({...item,_detectedFamily:detectedFam}); return; }
     const match = fd.holdings.find(h=>{
+      // Folio match takes priority — reliable even when fund names differ (e.g. Girik Excel uses HDFC FA codes)
+      if(item.folio && h.folio && String(item.folio).trim()===String(h.folio).trim()) return true;
       const fn=(h.fund||'').toLowerCase(), it=(item.fund_name||'').toLowerCase();
       return fn.includes(it.slice(0,15))||it.includes(fn.slice(0,15));
     });

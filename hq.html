@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- build: 2026-07-03T17:05:38Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -109,6 +110,7 @@ input{font-family:var(--font);}
 .family-skeleton.wide{width:80%;}
 .family-skeleton.narrow{width:40%;}
 
+.family-auto-refresh{font-size:10px;color:var(--text-muted);margin-top:4px;font-family:var(--font-mono,monospace);letter-spacing:0.2px;}
 /* ── Action Queue ────────────────────────────────────────────────────────── */
 .hq-action-queue{
   background:var(--surface);border:1px solid var(--border);
@@ -785,9 +787,24 @@ async function loadFamilyData(family){
       }
     });
 
-    _familyData[family.name] = { loaded:true, holdings, totalValue, totalInvested, alerts };
+    // Also read config tab for auto_refresh_status
+    let autoRefreshStatus = null;
+    try{
+      const cfgUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/config!A1:B30?valueRenderOption=UNFORMATTED_VALUE`;
+      const cfgResp = await fetchWithTimeout(cfgUrl, {headers:{Authorization:`Bearer ${_token}`}});
+      if(cfgResp.ok){
+        const cfgJson = await cfgResp.json();
+        const cfgRows = cfgJson.values || [];
+        const arRow = cfgRows.find(r => (r[0]||'').toString().trim().toLowerCase() === 'auto_refresh_status');
+        if(arRow && arRow[1]){
+          try{ autoRefreshStatus = JSON.parse(arRow[1]); }catch(e2){}
+        }
+      }
+    }catch(e2){ /* config tab may not exist yet */ }
+
+    _familyData[family.name] = { loaded:true, holdings, totalValue, totalInvested, alerts, autoRefreshStatus };
   }catch(e){
-    _familyData[family.name]={loaded:true, error:e.message, holdings:[], totalValue:0, totalInvested:0, alerts:[]};
+    _familyData[family.name]={loaded:true, error:e.message, holdings:[], totalValue:0, totalInvested:0, alerts:[], autoRefreshStatus:null};
   }
 }
 
@@ -875,6 +892,7 @@ function renderAllFamilyCards(){
           <span class="family-holdings">${d.holdings.length} holdings synced</span>
           ${f.dashUrl?`<button class="family-open-btn" onclick="window.open('${f.dashUrl}','_blank')">Open Dashboard ↗</button>`:''}
         </div>
+        ${d.autoRefreshStatus ? `<div class="family-auto-refresh">${_fmtAutoRefresh(d.autoRefreshStatus)}</div>` : ''}
         ${alertCount>0?`
         <div class="family-alerts">
           ${d.alerts.slice(0,2).map(a=>`
@@ -899,6 +917,37 @@ function renderActionQueue(){
     d.alerts.forEach(a => allAlerts.push({...a, family:f.name, color:f.color}));
   });
 
+  // Add persistent NAV failure alerts from auto-refresh
+  FAMILIES.filter(f=>!f.comingSoon).forEach(f=>{
+    const d = _familyData[f.name];
+    if(!d||d.error||!d.autoRefreshStatus) return;
+    const s = d.autoRefreshStatus;
+    if(s.persistentCodes && s.persistentCodes.length > 0){
+      s.persistentCodes.forEach(p=>{
+        allAlerts.push({
+          priority:'high',
+          fund: 'Scheme code ' + p.code,
+          investor: 'Auto-refresh',
+          msg: 'NAV fetch failed ' + (s.totalCycles||2) + ' consecutive cycles (' + (p.error||'unknown') + '). Click Fix → to open scheme code editor.',
+          family: f.name,
+          color: f.color
+        });
+      });
+    }
+    if(s.pmsAlerts && s.pmsAlerts.length > 0){
+      s.pmsAlerts.forEach(alert=>{
+        allAlerts.push({
+          priority:'medium',
+          fund: alert.split(' (')[0] || alert,
+          investor: '',
+          msg: alert,
+          family: f.name,
+          color: f.color
+        });
+      });
+    }
+  });
+
   // Sort by priority
   const order = {high:0, medium:1, low:2};
   allAlerts.sort((a,b)=>(order[a.priority]||9)-(order[b.priority]||9));
@@ -921,6 +970,32 @@ function renderActionQueue(){
       <span class="aq-family-tag" style="background:${a.color}22;color:${a.color}">${a.family}</span>
       <button class="aq-action-btn" onclick="hqQuickAction(${JSON.stringify(a).replace(/'/g,'&apos;')})">Fix →</button>
     </div>`).join('');
+}
+
+function _fmtAutoRefresh(s){
+  if(!s) return '';
+  const parts = [];
+  try{
+    const nextRun = s.nextRun ? new Date(s.nextRun) : null;
+    const lastRun = s.lastRun ? new Date(s.lastRun) : null;
+    const now = new Date();
+    if(nextRun && nextRun > now){
+      const mins = Math.round((nextRun - now)/60000);
+      const h=Math.floor(mins/60), m=mins%60;
+      parts.push('Auto ↻ in '+(h>0?h+'h ':'')+m+'m');
+    } else if(lastRun){
+      parts.push('Auto ↻ overdue');
+    }
+    if(lastRun){
+      const fmt = lastRun.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+                +' '+lastRun.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+      parts.push('last: '+fmt);
+    }
+    if(s.persistentCodes && s.persistentCodes.length > 0){
+      parts.push('⚠ '+s.persistentCodes.length+' code'+(s.persistentCodes.length>1?'s':'')+' failing');
+    }
+  }catch(e){}
+  return parts.join(' · ');
 }
 
 function updateTotalBar(){

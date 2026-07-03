@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-03T17:31:59Z -->
+<!-- build: 2026-07-03T17:36:32Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1013,7 +1013,9 @@ function renderActionQueue(){
     return;
   }
 
-  body.innerHTML = allAlerts.map(a=>`
+  // Store alerts globally so onclick can look up by index (avoids JSON-in-attribute quoting issues)
+  window._hqAlerts = allAlerts;
+  body.innerHTML = allAlerts.map((a,idx)=>`
     <div class="aq-item">
       <div class="aq-priority ${a.priority}"></div>
       <div class="aq-body">
@@ -1021,7 +1023,7 @@ function renderActionQueue(){
         <div class="aq-meta">${shortInv(a.investor)} · ${a.msg}</div>
       </div>
       <span class="aq-family-tag" style="background:${a.color}22;color:${a.color}">${a.family}</span>
-      <button class="aq-action-btn" onclick="hqQuickAction(${JSON.stringify(a).replace(/'/g,'&apos;')})">Fix →</button>
+      <button class="aq-action-btn" onclick="hqQuickAction(${idx})">Fix →</button>
     </div>`).join('');
 }
 
@@ -1105,7 +1107,9 @@ function _hqPulseAttach(){
   el.addEventListener('animationend', () => el.classList.remove('hq-pulsing'), {once:true});
 }
 
-function hqQuickAction(alert){
+function hqQuickAction(alertOrIdx){
+  const alert = (typeof alertOrIdx === 'number') ? (window._hqAlerts||[])[alertOrIdx] : alertOrIdx;
+  if(!alert){ console.warn('hqQuickAction: alert not found', alertOrIdx); return; }
   const {fund, investor, msg, family} = alert;
   const type = _classifyAlert(alert);
   const inv  = shortInv(investor||'');

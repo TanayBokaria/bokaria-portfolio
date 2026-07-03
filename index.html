@@ -1880,7 +1880,83 @@ function resetReportIssueFiles(){
 
 
 // ── SI# (Priya's tracking number) — Sl# Manager ─────────────────────────────
-window.SI_MAP = {};
+// SI# map seeded from Priya's master tracking sheet (Apr 2026)
+// 44 PORTFOLIO entries + 6 new_holdings entries
+// Composite keys (folio|hint) handle rare folio collisions
+window.SI_MAP = {
+  '402228905024':571,
+  '405237087862':582,
+  '70531383594':584,
+  '16029450/79':585,
+  '70539935263':589,
+  'XOF317':611,
+  '10810723':612,
+  '100762':613,
+  '100765':614,
+  '13523828':618,
+  '3052':619,
+  '405313117992':621,
+  '34642279/30':622,
+  '9106948934':624,
+  '90510060242':625,
+  'EIMJ0436':626,
+  '10111':627,
+  '34140448':628,
+  'AIFM_PSCF_0189':629,
+  'EIMJ0759':630,
+  'AIFM_PSCF_0186':631,
+  '101570':632,
+  'INF209K01VP1|prashant':633,
+  'INF209K01VP1|shalini':634,
+  '4553379/82':810,
+  '90512131031':852,
+  '70531385844':912,
+  '16020453/07':918,
+  '90519533965':928,
+  '24961746':939,
+  '17246964/72':965,
+  '70533593191':972,
+  '17934235/91':1002,
+  '9039734401':1015,
+  '70555987896':1033,
+  '402265121535':1035,
+  '70559736595':1046,
+  '25883138/56':1059,
+  '21890430/38':1060,
+  '33705366':1061,
+  '8353230/66':1062,
+  '70565619846':1063,
+  '26066694/57':1064,
+  '8636619/07':1078,
+  '10958284446':1079,
+  '29438309/81':1081,
+  '402303669745':1082,
+  '101035':1114,
+  '16550701':1115,
+  '18710103':1124
+};
+
+// ── getSlNum(h) — SI# lookup with composite-key support ─────────────────────
+// Composite keys (format 'folio|hint') handle the rare case where two different
+// funds share the same folio number (e.g. HSBC Multicap + HSBC Large & Midcap,
+// or two investors holding the same ISIN in demat form).
+// For normal holdings (unique folio), falls back to plain folio lookup.
+function getSlNum(h){
+  const folio = h.folio || '';
+  const fund  = (h.fund || h.originalName || '').toLowerCase();
+  const inv   = (h.investor || '').toLowerCase();
+  if(!window.SI_MAP) return '';
+  // Check composite keys first
+  for(const key of Object.keys(window.SI_MAP)){
+    if(!key.includes('|')) continue;
+    const [kFolio, kHint] = key.split('|');
+    if(kFolio === folio && (fund.includes(kHint) || inv.includes(kHint)))
+      return String(window.SI_MAP[key]);
+  }
+  // Plain folio lookup
+  return String(window.SI_MAP[folio] || '');
+}
+
 
 async function loadSIMap(){
   if(!sheetsConfig?.accessToken||!sheetsConfig?.sheetId) return;
@@ -3937,7 +4013,7 @@ async function exportToExcel(){
           ? Math.pow(currentValue / invested, 365 / holdingDays) - 1 : 0;
 
         const rowData = [
-          (window.SI_MAP && window.SI_MAP[h.folio]) || '', // A Sl# (from Priya's Sl# Manager, keyed by folio)
+          getSlNum(h), // A Sl# (from Priya's master SI# map)
           h.investor,                     // B Name of the Investor
           h.folio || '',                  // C Account No./Folio No.
           h.originalName || h.fund || '', // D Details of Investment

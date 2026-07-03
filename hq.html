@@ -281,7 +281,62 @@ input{font-family:var(--font);}
 .hq-modal-actions{display:flex;gap:8px;margin-top:16px;}
 .hq-modal-ok{background:var(--accent);border:none;border-radius:7px;padding:8px 18px;font-size:12px;font-weight:600;color:#1a1209;}
 .hq-modal-cancel{background:none;border:1px solid var(--border2);border-radius:7px;padding:8px 14px;font-size:12px;color:var(--text-muted);}
-</style>
+
+    /* ── HQ Health + Actions ─────────────────────────────────────────────── */
+    .hq-card-health{
+      display:flex;align-items:center;gap:5px;
+      margin-top:8px;padding-top:8px;border-top:1px solid var(--border);
+      font-size:10px;color:var(--text-dim);
+    }
+    .hq-health-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+    .hq-health-dot.ok{background:var(--green);}
+    .hq-health-dot.warn{background:var(--accent);}
+    .hq-health-dot.err{background:var(--red);}
+    .hq-reload-btn{
+      display:flex;align-items:center;gap:5px;padding:5px 11px;
+      border-radius:7px;background:var(--surface2);border:1px solid var(--border2);
+      color:var(--text-muted);font-size:11px;cursor:pointer;transition:all 0.15s;
+    }
+    .hq-reload-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .hq-reload-btn.loading{opacity:0.6;cursor:not-allowed;}
+    .hq-report-btn{
+      display:flex;align-items:center;gap:5px;padding:5px 11px;
+      border-radius:7px;background:rgba(239,107,107,0.08);
+      border:1px solid rgba(239,107,107,0.25);color:var(--red);
+      font-size:11px;cursor:pointer;transition:all 0.15s;
+    }
+    .hq-report-btn:hover{background:rgba(239,107,107,0.15);}
+    .hq-header-actions{display:flex;align-items:center;gap:6px;}
+    /* Report modal extras */
+    .hq-report-status{
+      display:none;margin-top:10px;padding:8px 12px;border-radius:7px;
+      font-size:12px;border:1px solid var(--border);background:var(--surface2);
+    }
+    .hq-health-panel{
+      background:var(--surface);border:1px solid var(--border);
+      border-radius:12px;margin-bottom:16px;overflow:hidden;
+    }
+    .hq-health-panel-header{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 14px;border-bottom:1px solid var(--border);
+    }
+    .hq-health-panel-title{font-size:11px;font-weight:600;color:var(--text-muted);}
+    .hq-health-rows{display:grid;grid-template-columns:repeat(4,1fr);}
+    @media(max-width:900px){.hq-health-rows{grid-template-columns:repeat(2,1fr);}}
+    .hq-health-cell{
+      padding:10px 14px;border-right:1px solid var(--border);
+    }
+    .hq-health-cell:last-child{border-right:none;}
+    .hq-health-cell-name{font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px;}
+    .hq-health-item{display:flex;align-items:center;gap:5px;font-size:11px;margin-top:3px;}
+    .hq-spinner{
+      width:12px;height:12px;border:2px solid var(--border2);
+      border-top-color:var(--accent);border-radius:50%;
+      animation:hqSpin 0.8s linear infinite;display:inline-block;
+    }
+    @keyframes hqSpin{to{transform:rotate(360deg)}}
+
+  </style>
 </head>
 <body>
 
@@ -300,6 +355,14 @@ input{font-family:var(--font);}
       <span class="hq-total-val" id="hqTotalVal">—</span>
       <span id="hqLastUpdated" style="font-size:10px;color:var(--text-dim)"></span>
     </div>
+    <div class="hq-header-actions" id="hqHeaderActions" style="display:none">
+      <button class="hq-reload-btn" id="hqReloadBtn" onclick="hqReloadAll()" title="Re-read all family Sheets">
+        ↻ Reload Data
+      </button>
+      <button class="hq-report-btn" onclick="openModal('hqReportModal')" title="Report an issue">
+        ⚠ Report Issue
+      </button>
+    </div>
     <div id="hqStatusDot" class="hq-status-dot"></div>
     <button class="hq-auth-btn" id="hqAuthBtn" onclick="hqConnect()">Connect Sheets</button>
   </div>
@@ -315,6 +378,8 @@ input{font-family:var(--font);}
   </div>
 
   <!-- Action Queue -->
+  <div class="hq-section-label" id="hqHealthSectionLabel" style="display:none">System Health</div>
+  <div id="hqHealthPanelInline"></div>
   <div class="hq-section-label">Action Queue</div>
   <div class="hq-action-queue" id="hqActionQueue">
     <div class="hq-aq-header">
@@ -357,6 +422,44 @@ input{font-family:var(--font);}
 </div>
 
 <!-- ── Connect modal ────────────────────────────────────────────────────── -->
+
+<!-- ── Cross-family health panel ─────────────────────────────────────────── -->
+<div class="hq-health-panel" id="hqHealthPanel" style="display:none">
+  <div class="hq-health-panel-header">
+    <span class="hq-health-panel-title">⬡ System Health</span>
+    <span id="hqHealthSummary" style="font-size:10px;color:var(--text-muted)">Checking…</span>
+  </div>
+  <div class="hq-health-rows" id="hqHealthRows"></div>
+</div>
+
+<!-- ── Report Issue modal ────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="hqReportModal">
+  <div class="hq-modal">
+    <h2>Report an Issue</h2>
+    <p>Describe what went wrong. This will be logged to the relevant family's error log Sheet tab and can be viewed by the admin.</p>
+    <div class="hq-modal-field">
+      <label class="hq-modal-label">Which family?</label>
+      <select class="hq-modal-input" id="hqReportFamily" style="cursor:pointer">
+        <option value="Prashant">Prashant</option>
+        <option value="Piyush">Piyush</option>
+        <option value="Prabin">Prabin</option>
+        <option value="Umed Singh">Umed Singh</option>
+      </select>
+    </div>
+    <div class="hq-modal-field">
+      <label class="hq-modal-label">Describe the issue</label>
+      <textarea class="hq-modal-input" id="hqReportDesc" rows="3"
+        placeholder="e.g. Priya's Kotak Optimus value update didn't save…"
+        style="resize:vertical"></textarea>
+    </div>
+    <div id="hqReportStatus" class="hq-report-status"></div>
+    <div class="hq-modal-actions">
+      <button class="hq-modal-ok" onclick="hqSubmitReport()">Submit Report</button>
+      <button class="hq-modal-cancel" onclick="closeModal('hqReportModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="hqConnectModal">
   <div class="hq-modal">
     <h2>Connect Google Sheets</h2>
@@ -550,6 +653,10 @@ async function hqLoadAll(){
   renderAllFamilyCards();
   renderActionQueue();
   updateTotalBar();
+  // Show reload + report buttons now that we're connected
+  document.getElementById('hqHeaderActions').style.display = 'flex';
+  // Auto-run health checks
+  runHqHealthChecks();
 }
 
 async function loadFamilyData(family){
@@ -1281,6 +1388,153 @@ async function hqSend(prefillText){
     inputEl?.focus();
   }
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RELOAD DATA
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function hqReloadAll(){
+  const btn = document.getElementById('hqReloadBtn');
+  if(btn){ btn.classList.add('loading'); btn.textContent = '↻ Reloading…'; btn.disabled = true; }
+  const active = FAMILIES.filter(f=>!f.comingSoon);
+  await Promise.allSettled(active.map(f => loadFamilyData(f)));
+  renderAllFamilyCards();
+  renderActionQueue();
+  updateTotalBar();
+  runHqHealthChecks();
+  if(btn){ btn.classList.remove('loading'); btn.textContent = '↻ Reload Data'; btn.disabled = false; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CROSS-FAMILY HEALTH CHECK (runs on connect + on reload)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function runHqHealthChecks(){
+  const panel = document.getElementById('hqHealthPanel');
+  const inline = document.getElementById('hqHealthPanelInline');
+  const label  = document.getElementById('hqHealthSectionLabel');
+  const rows   = document.getElementById('hqHealthRows');
+  const summary= document.getElementById('hqHealthSummary');
+  if(!panel||!rows) return;
+
+  panel.style.display='block';
+  if(inline) inline.appendChild(panel);
+  if(label)  label.style.display='block';
+
+  const active = FAMILIES.filter(f=>!f.comingSoon);
+  rows.innerHTML = active.map(f=>`
+    <div class="hq-health-cell" id="hqHC_${f.name.replace(/\s/g,'_')}">
+      <div class="hq-health-cell-name">${f.name}</div>
+      <div class="hq-health-item"><div class="hq-spinner"></div><span style="color:var(--text-dim)">Checking…</span></div>
+    </div>`).join('');
+  summary.textContent = 'Running checks…';
+
+  let totalIssues = 0;
+  await Promise.allSettled(active.map(async f=>{
+    const issues = await checkFamilyHealth(f);
+    totalIssues += issues.length;
+    const cell = document.getElementById(`hqHC_${f.name.replace(/\s/g,'_')}`);
+    if(!cell) return;
+    const color = issues.length===0 ? 'var(--green)' : issues.some(i=>i.level==='error') ? 'var(--red)' : 'var(--accent)';
+    cell.innerHTML = `
+      <div class="hq-health-cell-name" style="color:${color}">${f.name}</div>
+      ${issues.length===0
+        ? `<div class="hq-health-item"><div class="hq-health-dot ok"></div><span>All checks passed</span></div>`
+        : issues.map(i=>`
+            <div class="hq-health-item">
+              <div class="hq-health-dot ${i.level==='error'?'err':'warn'}"></div>
+              <span style="color:${i.level==='error'?'var(--red)':'var(--accent)'}">${i.msg}</span>
+            </div>`).join('')
+      }`;
+  }));
+
+  summary.textContent = totalIssues===0
+    ? '✓ All families healthy'
+    : `${totalIssues} issue${totalIssues>1?'s':''} found`;
+  summary.style.color = totalIssues===0 ? 'var(--green)' : 'var(--red)';
+}
+
+async function checkFamilyHealth(family){
+  const issues = [];
+  const d = _familyData[family.name];
+
+  // 1. Data loaded?
+  if(!d || d.error){
+    issues.push({level:'error', msg:`Cannot read Sheet: ${d?.error||'unknown'}`});
+    return issues;
+  }
+  // 2. Has snapshot data?
+  if(d.holdings.length === 0){
+    issues.push({level:'warn', msg:'No snapshot — open dashboard and Refresh NAVs'});
+    return issues;
+  }
+  // 3. Any ₹0 holdings with invested > 0?
+  const zeros = d.holdings.filter(h=>h.value===0&&h.invested>0);
+  if(zeros.length > 0){
+    issues.push({level:'warn', msg:`${zeros.length} holding${zeros.length>1?'s':''} with ₹0 current value`});
+  }
+  // 4. Snapshot freshness — check most recent timestamp (col 0)
+  // We don't store timestamp in our parsed structure — check asOfDate
+  const stale = d.holdings.filter(h=>{
+    if(!h.asOfDate || h.asOfDate==='—') return false;
+    // Try to parse date
+    try{
+      const d2 = new Date(h.asOfDate);
+      if(isNaN(d2.getTime())) return false;
+      const daysSince = (Date.now()-d2.getTime())/(1000*86400);
+      return daysSince > 60;
+    }catch{return false;}
+  });
+  if(stale.length > 3){
+    issues.push({level:'warn', msg:`${stale.length} holdings with values >60 days old`});
+  }
+
+  return issues;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REPORT ISSUE
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function hqSubmitReport(){
+  const family  = document.getElementById('hqReportFamily')?.value;
+  const desc    = document.getElementById('hqReportDesc')?.value?.trim();
+  const statusEl= document.getElementById('hqReportStatus');
+
+  if(!desc){ statusEl.style.display='block'; statusEl.style.color='var(--red)';
+    statusEl.textContent='Please describe the issue before submitting.'; return; }
+  if(!_token){ statusEl.style.display='block'; statusEl.style.color='var(--red)';
+    statusEl.textContent='Not connected to Sheets — connect first.'; return; }
+
+  const fam = getFamilyConfig(family);
+  if(!fam){ statusEl.style.display='block'; statusEl.style.color='var(--red)';
+    statusEl.textContent='Unknown family.'; return; }
+
+  statusEl.style.display='block'; statusEl.style.color='var(--text-muted)';
+  statusEl.textContent='Logging report…';
+
+  const ts = new Date().toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'});
+  const row = [ts, 'HQ', 'hqReportIssue', '', '', 'manual_report', desc, 'Priya'];
+
+  try{
+    const res = await fetchWithTimeout(
+      `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      { method:'POST',
+        headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+        body: JSON.stringify({values:[row]}) }
+    );
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    statusEl.style.color='var(--green)';
+    statusEl.textContent='✓ Report logged to the ' + family + ' Sheet error_log tab.';
+    setTimeout(()=>{ closeModal('hqReportModal');
+      document.getElementById('hqReportDesc').value=''; statusEl.style.display='none'; }, 2500);
+  }catch(e){
+    statusEl.style.color='var(--red)';
+    statusEl.textContent='⚠ Failed to log: ' + e.message;
+  }
+}
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INIT

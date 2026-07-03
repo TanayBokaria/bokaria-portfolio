@@ -1135,7 +1135,7 @@ async function executeHqAction(resultStr, cardEl){
   if(result.intent === 'update_value'){
     const d = _familyData[fam.name];
     if(!d?.holdings.length){
-      hqAppendMsg('error',`⚠ No portfolio data loaded for ${fam.name}. Open the ${fam.name} dashboard and refresh NAVs first.`);
+      hqAppendMsg('error',`⚠ No portfolio data loaded for ${fam.name}. ${!_token ? 'Session expired — click Connected ✓ to reconnect.' : 'Open the '+fam.name+' dashboard, connect Sheets, and Refresh NAVs to sync data.'}`);
       return;
     }
     // Find the holding row number in portfolio_snapshot

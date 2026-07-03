@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bokaria Family Investment HQ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+/* ── Design tokens (matching individual dashboards) ─────────────────────── */
+:root{
+  --bg:#0f0f1a;--surface:#161625;--surface2:#1e1e32;--surface3:#252540;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8e6e3;--text-muted:rgba(232,230,227,0.55);--text-dim:rgba(232,230,227,0.3);
+  --accent:#c8a96e;--accent-dim:rgba(200,169,110,0.15);--accent-border:rgba(200,169,110,0.35);
+  --green:#6bbf8f;--red:#ef6b6b;--blue:#6b9bbf;--purple:#a06bbf;--orange:#bf9a6b;
+  --font:'Inter',system-ui,sans-serif;--mono:'DM Mono','Fira Mono',monospace;
+  --radius:10px;--shadow:0 4px 24px rgba(0,0,0,0.4);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;
+  min-height:100vh;display:flex;flex-direction:column;}
+a{color:var(--accent);text-decoration:none;}
+button{font-family:var(--font);cursor:pointer;}
+input{font-family:var(--font);}
+
+/* ── Top header bar ──────────────────────────────────────────────────────── */
+.hq-topbar{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 24px;height:52px;display:flex;align-items:center;
+  justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:50;
+}
+.hq-logo{display:flex;align-items:center;gap:10px;}
+.hq-logo-mark{
+  width:28px;height:28px;border-radius:7px;
+  background:linear-gradient(135deg,var(--accent),#9a7a4a);
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:700;color:#1a1209;flex-shrink:0;
+}
+.hq-logo-text{font-size:14px;font-weight:600;letter-spacing:-0.3px;}
+.hq-logo-sub{font-size:10px;color:var(--text-dim);margin-top:1px;}
+.hq-topbar-right{display:flex;align-items:center;gap:8px;}
+.hq-auth-btn,.hq-connect-btn{
+  padding:5px 12px;border-radius:7px;font-size:11px;font-weight:500;border:none;
+}
+.hq-auth-btn{background:var(--accent);color:#1a1209;}
+.hq-connect-btn{background:var(--surface2);border:1px solid var(--border2);color:var(--text-muted);}
+.hq-status-dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);flex-shrink:0;}
+.hq-status-dot.connected{background:var(--green);}
+.hq-total-bar{
+  display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);
+}
+.hq-total-val{font-size:14px;font-weight:700;color:var(--accent);font-family:var(--mono);}
+
+/* ── Main scrollable area ────────────────────────────────────────────────── */
+.hq-main{flex:1;overflow-y:auto;padding:20px 24px 0;}
+
+/* ── Family cards grid ───────────────────────────────────────────────────── */
+.hq-section-label{
+  font-size:10px;text-transform:uppercase;letter-spacing:0.8px;
+  color:var(--text-dim);font-weight:600;margin-bottom:10px;
+}
+.hq-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+@media(max-width:900px){.hq-cards{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:500px){.hq-cards{grid-template-columns:1fr;}}
+
+.family-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:16px;position:relative;overflow:hidden;
+  transition:border-color 0.15s;
+}
+.family-card:hover{border-color:var(--border2);}
+.family-card.coming-soon{opacity:0.5;}
+.family-card-accent{
+  position:absolute;top:0;left:0;right:0;height:3px;border-radius:12px 12px 0 0;
+}
+.family-card-header{
+  display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;
+}
+.family-name{font-size:13px;font-weight:600;}
+.family-badge{
+  font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;
+  text-transform:uppercase;letter-spacing:0.4px;
+}
+.family-badge.ok{background:rgba(107,191,143,0.15);color:var(--green);}
+.family-badge.stale{background:rgba(239,107,107,0.15);color:var(--red);}
+.family-badge.loading{background:var(--surface2);color:var(--text-dim);}
+.family-badge.soon{background:var(--surface2);color:var(--text-dim);}
+.family-value{font-size:22px;font-weight:700;font-family:var(--mono);letter-spacing:-0.5px;margin-bottom:4px;}
+.family-invested{font-size:10px;color:var(--text-muted);}
+.family-gain{font-size:11px;font-weight:600;margin-bottom:10px;}
+.family-gain.pos{color:var(--green);}
+.family-gain.neg{color:var(--red);}
+.family-meta{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
+.family-holdings{font-size:10px;color:var(--text-dim);}
+.family-open-btn{
+  font-size:10px;padding:4px 9px;border-radius:6px;border:1px solid var(--border2);
+  background:none;color:var(--text-muted);transition:all 0.15s;
+}
+.family-open-btn:hover{border-color:var(--accent);color:var(--accent);}
+.family-alerts{margin-top:10px;display:flex;flex-direction:column;gap:4px;}
+.family-alert-item{
+  font-size:10px;color:var(--text-muted);padding:4px 7px;
+  background:var(--surface2);border-radius:5px;display:flex;align-items:center;gap:5px;
+}
+.family-alert-dot{width:5px;height:5px;border-radius:50%;background:var(--red);flex-shrink:0;}
+.family-alert-dot.amber{background:var(--accent);}
+.family-skeleton{height:14px;background:var(--surface2);border-radius:4px;margin-bottom:8px;}
+.family-skeleton.wide{width:80%;}
+.family-skeleton.narrow{width:40%;}
+
+/* ── Action Queue ────────────────────────────────────────────────────────── */
+.hq-action-queue{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;margin-bottom:20px;overflow:hidden;
+}
+.hq-aq-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:1px solid var(--border);
+}
+.hq-aq-title{font-size:12px;font-weight:600;}
+.hq-aq-count{
+  font-size:10px;padding:2px 7px;border-radius:10px;
+  background:rgba(239,107,107,0.15);color:var(--red);font-weight:600;
+}
+.hq-aq-count.green{background:rgba(107,191,143,0.15);color:var(--green);}
+.aq-item{
+  display:flex;align-items:center;gap:10px;padding:10px 16px;
+  border-bottom:1px solid var(--border);transition:background 0.1s;
+}
+.aq-item:last-child{border-bottom:none;}
+.aq-item:hover{background:var(--surface2);}
+.aq-priority{
+  width:6px;height:6px;border-radius:50%;flex-shrink:0;
+}
+.aq-priority.high{background:var(--red);}
+.aq-priority.medium{background:var(--accent);}
+.aq-priority.low{background:var(--blue);}
+.aq-body{flex:1;min-width:0;}
+.aq-fund{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.aq-meta{font-size:10px;color:var(--text-muted);margin-top:1px;}
+.aq-family-tag{
+  font-size:9px;padding:2px 6px;border-radius:5px;font-weight:600;flex-shrink:0;
+}
+.aq-action-btn{
+  font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border2);
+  background:none;color:var(--text-muted);flex-shrink:0;
+}
+.aq-action-btn:hover{border-color:var(--accent);color:var(--accent);}
+.aq-empty{padding:20px;text-align:center;color:var(--text-dim);font-size:12px;}
+
+/* ── AI Command Bar ──────────────────────────────────────────────────────── */
+.hq-ai-bar{
+  background:var(--surface);border-top:1px solid var(--border);
+  padding:0;flex-shrink:0;position:sticky;bottom:0;z-index:40;
+}
+.hq-ai-thread-wrap{
+  max-height:0;overflow:hidden;transition:max-height 0.3s ease;
+}
+.hq-ai-thread-wrap.open{max-height:360px;}
+.hq-ai-thread{
+  padding:12px 16px;max-height:360px;overflow-y:auto;
+  display:flex;flex-direction:column;gap:8px;
+  border-bottom:1px solid var(--border);
+}
+.hq-ai-input-area{
+  padding:10px 16px 12px;display:flex;flex-direction:column;gap:8px;
+}
+.hq-ai-routing{
+  display:none;font-size:10px;color:var(--text-muted);align-items:center;gap:5px;
+}
+.hq-ai-routing.visible{display:flex;}
+.hq-ai-routing-arrow{color:var(--accent);}
+.hq-ai-routing-family{
+  font-weight:600;color:var(--accent);
+  padding:1px 6px;background:var(--accent-dim);border-radius:4px;
+}
+.hq-ai-file-chips{display:flex;flex-wrap:wrap;gap:4px;}
+.hq-ai-input-row{display:flex;gap:8px;}
+.hq-ai-input{
+  flex:1;background:var(--surface2);border:1px solid var(--border2);
+  border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text);
+  outline:none;font-family:var(--font);
+}
+.hq-ai-input:focus{border-color:var(--accent);}
+.hq-ai-input::placeholder{color:var(--text-dim);}
+.hq-ai-attach{
+  background:var(--surface2);border:1px solid var(--border2);
+  border-radius:8px;padding:9px 11px;font-size:14px;color:var(--text-muted);
+  flex-shrink:0;transition:border-color 0.15s;
+}
+.hq-ai-attach:hover,.hq-ai-attach.has-files{border-color:var(--accent);color:var(--accent);}
+.hq-ai-send{
+  background:var(--accent);border:none;border-radius:8px;
+  padding:9px 18px;font-size:12px;font-weight:600;color:#1a1209;flex-shrink:0;
+}
+.hq-ai-send:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* AI message bubbles */
+.hq-msg{display:flex;gap:8px;align-items:flex-start;}
+.hq-msg.user{flex-direction:row-reverse;}
+.hq-bubble{
+  max-width:78%;padding:8px 12px;border-radius:10px;font-size:12px;line-height:1.5;
+}
+.hq-msg.ai .hq-bubble{background:var(--surface2);border:1px solid var(--border);}
+.hq-msg.user .hq-bubble{background:var(--accent-dim);border:1px solid var(--accent-border);}
+.hq-msg.error .hq-bubble{background:rgba(239,107,107,0.08);border:1px solid rgba(239,107,107,0.2);color:var(--red);}
+
+/* Confirm card */
+.hq-confirm-card{
+  background:var(--surface2);border:1px solid var(--accent-border);
+  border-radius:10px;padding:12px 14px;font-size:12px;
+}
+.hq-confirm-label{font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:6px;font-weight:600;}
+.hq-confirm-family{
+  display:inline-flex;align-items:center;gap:4px;font-size:10px;
+  padding:2px 7px;border-radius:5px;margin-bottom:8px;font-weight:600;
+}
+.hq-confirm-detail{font-size:13px;font-weight:600;margin-bottom:10px;}
+.hq-confirm-actions{display:flex;gap:8px;}
+.hq-confirm-ok{background:var(--accent);border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:600;color:#1a1209;}
+.hq-confirm-cancel{background:none;border:1px solid var(--border2);border-radius:6px;padding:5px 12px;font-size:12px;color:var(--text-muted);}
+
+/* Clarification options */
+.hq-options{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;}
+.hq-opt{
+  padding:4px 11px;border-radius:14px;font-size:11px;
+  background:var(--surface);border:1px solid var(--border2);color:var(--text);
+  transition:border-color 0.12s;
+}
+.hq-opt:hover{border-color:var(--accent);color:var(--accent);}
+
+/* Thinking */
+.hq-thinking{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);}
+.hq-dots span{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--text-dim);animation:dot 1.2s infinite;margin:0 1px;}
+.hq-dots span:nth-child(2){animation-delay:.2s;}
+.hq-dots span:nth-child(3){animation-delay:.4s;}
+@keyframes dot{0%,80%,100%{opacity:.2}40%{opacity:1}}
+
+/* File chip */
+.hq-chip{
+  display:flex;align-items:center;gap:5px;background:var(--surface2);
+  border:1px solid var(--border);border-radius:11px;padding:3px 8px 3px 10px;
+  font-size:11px;color:var(--text-muted);
+}
+.hq-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;}
+.hq-chip button{background:none;border:none;color:var(--text-dim);font-size:12px;padding:0 1px;line-height:1;}
+.hq-chip button:hover{color:var(--red);}
+
+/* Diff card */
+.hq-diff-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden;font-size:12px;}
+.hq-diff-section-title{padding:7px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;}
+.hq-diff-section-title.dup{color:var(--text-dim);}
+.hq-diff-section-title.upd{color:var(--accent);}
+.hq-diff-section-title.new{color:var(--green);}
+.hq-diff-row{display:flex;align-items:flex-start;gap:8px;padding:7px 12px;border-top:1px solid var(--border);}
+.hq-diff-row input[type=checkbox]{flex-shrink:0;margin-top:2px;accent-color:var(--accent);}
+.hq-diff-body{flex:1;min-width:0;}
+.hq-diff-fund{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hq-diff-meta{font-size:10px;color:var(--text-muted);margin-top:1px;}
+.hq-diff-val{font-size:11px;font-family:var(--mono);margin-top:2px;}
+.hq-diff-apply-row{padding:10px 12px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);}
+.hq-diff-apply{background:var(--accent);border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:600;color:#1a1209;}
+.hq-diff-cancel{background:none;border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text-muted);}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+  z-index:100;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.visible{display:flex;}
+.hq-modal{background:var(--surface);border:1px solid var(--border2);border-radius:14px;
+  padding:24px;width:min(480px,100%);max-height:90vh;overflow-y:auto;}
+.hq-modal h2{font-size:15px;font-weight:600;margin-bottom:8px;}
+.hq-modal p{font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.5;}
+.hq-modal-field{margin-bottom:12px;}
+.hq-modal-label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:5px;}
+.hq-modal-input{
+  width:100%;background:var(--surface2);border:1px solid var(--border2);
+  border-radius:7px;padding:8px 10px;font-size:12px;color:var(--text);outline:none;
+}
+.hq-modal-input:focus{border-color:var(--accent);}
+.hq-modal-actions{display:flex;gap:8px;margin-top:16px;}
+.hq-modal-ok{background:var(--accent);border:none;border-radius:7px;padding:8px 18px;font-size:12px;font-weight:600;color:#1a1209;}
+.hq-modal-cancel{background:none;border:1px solid var(--border2);border-radius:7px;padding:8px 14px;font-size:12px;color:var(--text-muted);}
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ──────────────────────────────────────────────────────────── -->
+<header class="hq-topbar">
+  <div class="hq-logo">
+    <div class="hq-logo-mark">B</div>
+    <div>
+      <div class="hq-logo-text">Bokaria Family HQ</div>
+      <div class="hq-logo-sub">Investment Command Centre</div>
+    </div>
+  </div>
+  <div class="hq-topbar-right">
+    <div class="hq-total-bar" id="hqTotalBar" style="display:none">
+      <span>Total</span>
+      <span class="hq-total-val" id="hqTotalVal">—</span>
+      <span id="hqLastUpdated" style="font-size:10px;color:var(--text-dim)"></span>
+    </div>
+    <div id="hqStatusDot" class="hq-status-dot"></div>
+    <button class="hq-auth-btn" id="hqAuthBtn" onclick="hqConnect()">Connect Sheets</button>
+  </div>
+</header>
+
+<!-- ── Main content ─────────────────────────────────────────────────────── -->
+<main class="hq-main" id="hqMain">
+
+  <!-- Family cards -->
+  <div class="hq-section-label">Family Portfolios</div>
+  <div class="hq-cards" id="hqCards">
+    <!-- Rendered by JS -->
+  </div>
+
+  <!-- Action Queue -->
+  <div class="hq-section-label">Action Queue</div>
+  <div class="hq-action-queue" id="hqActionQueue">
+    <div class="hq-aq-header">
+      <span class="hq-aq-title">Items Needing Attention</span>
+      <span class="hq-aq-count loading" id="hqAqCount">Loading…</span>
+    </div>
+    <div id="hqAqBody">
+      <div class="aq-empty">Connect Sheets to load action queue</div>
+    </div>
+  </div>
+
+  <div style="height:180px"></div><!-- Spacer for AI bar -->
+</main>
+
+<!-- ── AI Command Bar ────────────────────────────────────────────────────── -->
+<div class="hq-ai-bar">
+  <div class="hq-ai-thread-wrap" id="hqThreadWrap">
+    <div class="hq-ai-thread" id="hqThread"></div>
+  </div>
+  <div class="hq-ai-input-area">
+    <div class="hq-ai-routing" id="hqRouting">
+      <span>Routing to</span>
+      <span class="hq-ai-routing-arrow">→</span>
+      <span class="hq-ai-routing-family" id="hqRoutingFamily"></span>
+      <span style="color:var(--text-dim);font-size:10px" id="hqRoutingClear"
+        onclick="clearHqRouting()" style="cursor:pointer">✕</span>
+    </div>
+    <div class="hq-ai-file-chips" id="hqFileChips" style="display:none"></div>
+    <div class="hq-ai-input-row">
+      <button class="hq-ai-attach" id="hqAttachBtn" title="Attach file"
+        onclick="document.getElementById('hqFileInput').click()">📎</button>
+      <input type="file" id="hqFileInput" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg"
+        multiple style="display:none" onchange="hqAddFiles(this.files)">
+      <input class="hq-ai-input" id="hqInput"
+        placeholder="Ask anything or give an instruction — e.g. 'What is Piyush's total equity?' or 'Update Prabin's Kotak Optimus to 66 lakh'"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();hqSend();}">
+      <button class="hq-ai-send" id="hqSendBtn" onclick="hqSend()">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Connect modal ────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="hqConnectModal">
+  <div class="hq-modal">
+    <h2>Connect Google Sheets</h2>
+    <p>Sign in with the Google account that has access to all Bokaria family Sheets. One sign-in gives the HQ access to all three active family portfolios.</p>
+    <div class="hq-modal-field">
+      <label class="hq-modal-label">Google OAuth Client ID</label>
+      <input class="hq-modal-input" id="hqClientIdInput"
+        value="54722716336-puhqj8e67mf44jbi9unpm2lcgplos829.apps.googleusercontent.com">
+    </div>
+    <div class="hq-modal-actions">
+      <button class="hq-modal-ok" onclick="hqSignIn()">Sign in with Google</button>
+      <button class="hq-modal-cancel" onclick="closeModal('hqConnectModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIGURATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+const FAMILIES = [
+  {
+    name: 'Prashant', short: 'P',
+    sheetId: '1kd8w-gEmb8QE184L4VXeu0Ph_ID7cnD8Q8hUICRzuV0',
+    dashUrl: 'https://tanaybokaria.github.io/bokaria-portfolio/',
+    investors: ['Prashant Bokaria','Shalini Bokaria','Tanay Bokaria','Tanvi Bokaria','Prashant Bokaria HUF'],
+    color: '#6b9bbf', comingSoon: false,
+  },
+  {
+    name: 'Piyush', short: 'P',
+    sheetId: '1EH3OKMAo_PZdK0DuplRvUH7J6IIaWOcOf5Tmlfglon8',
+    dashUrl: 'https://tanaybokaria.github.io/piyush-bokaria-portfolio/',
+    investors: ['Piyush Bokaria','Babita Bokaria','Rohan Bokaria','Kavya Bokaria','Piyush Bokaria HUF'],
+    color: '#6bbf8f', comingSoon: false,
+  },
+  {
+    name: 'Prabin', short: 'P',
+    sheetId: '1qWrqbm5za6xfvVJK-VlwKgyUTSc6nYOyxwP8Plclk0I',
+    dashUrl: 'https://tanaybokaria.github.io/prabin-bokaria-portfolio/',
+    investors: ['Prabin Bokaria','Ritu Bokaria','Pranjul Bokaria','Preksha Bokaria','Prabin Bokaria HUF'],
+    color: '#bf9a6b', comingSoon: false,
+  },
+  {
+    name: 'Umed Singh', short: 'U',
+    sheetId: null,
+    dashUrl: null,
+    investors: ['Umed Singh Bokaria','Sushila Bokaria','Umed Singh Bokaria HUF'],
+    color: '#a06bbf', comingSoon: true,
+  },
+];
+
+// Investor → family lookup (built at init)
+const INVESTOR_TO_FAMILY = {};
+FAMILIES.forEach(f => f.investors.forEach(inv => INVESTOR_TO_FAMILY[inv.toLowerCase()] = f.name));
+
+const PRASHANT_SHEET_ID = '1kd8w-gEmb8QE184L4VXeu0Ph_ID7cnD8Q8hUICRzuV0';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+const LS_TOKEN = 'hq_access_token';
+const LS_CLIENT = 'hq_client_id';
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _token        = localStorage.getItem(LS_TOKEN) || null;
+let _clientId     = localStorage.getItem(LS_CLIENT) ||
+                    '54722716336-puhqj8e67mf44jbi9unpm2lcgplos829.apps.googleusercontent.com';
+let _geminiKeys   = [];
+let _geminiIdx    = 0;
+let _familyData   = {}; // { Prashant: { holdings, totalValue, totalInvested, alerts, loaded } }
+let _aiThread     = [];  // conversation history
+let _aiFiles      = [];  // accumulated file store
+let _routedFamily = null; // detected family context for current session
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════════════════════════════════════════════
+
+function fmtCr(v){
+  if(v == null || isNaN(v)) return '—';
+  if(v >= 1e7) return '₹' + (v/1e7).toFixed(2) + ' Cr';
+  if(v >= 1e5) return '₹' + (v/1e5).toFixed(1) + ' L';
+  return '₹' + Math.round(v).toLocaleString('en-IN');
+}
+function fmtDate(d){ return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); }
+function shortInv(n){ return n.replace(' Bokaria','').replace(' HUF',' HUF'); }
+function closeModal(id){ document.getElementById(id).classList.remove('visible'); }
+function openModal(id){ document.getElementById(id).classList.add('visible'); }
+
+function fetchWithTimeout(url, opts={}, ms=14000){
+  const ctrl = new AbortController();
+  const id = setTimeout(()=>ctrl.abort(), ms);
+  return fetch(url, {...opts, signal:ctrl.signal}).finally(()=>clearTimeout(id));
+}
+
+function detectFamily(text){
+  const t = text.toLowerCase();
+  // Direct family name mention
+  for(const f of FAMILIES) if(t.includes(f.name.toLowerCase())) return f.name;
+  // Investor name mention
+  for(const [inv, fam] of Object.entries(INVESTOR_TO_FAMILY)){
+    if(t.includes(inv)) return fam;
+  }
+  return null;
+}
+
+function getFamilyConfig(name){ return FAMILIES.find(f=>f.name===name); }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// OAUTH
+// ══════════════════════════════════════════════════════════════════════════════
+
+function hqConnect(){
+  if(_token){ hqLoadAll(); return; }
+  openModal('hqConnectModal');
+}
+
+function hqSignIn(){
+  _clientId = document.getElementById('hqClientIdInput').value.trim();
+  localStorage.setItem(LS_CLIENT, _clientId);
+  closeModal('hqConnectModal');
+  const params = new URLSearchParams({
+    client_id: _clientId,
+    redirect_uri: window.location.href.split('?')[0],
+    response_type: 'token',
+    scope: SCOPES,
+    prompt: 'select_account',
+  });
+  window.location.href = 'https://accounts.google.com/o/oauth2/auth?' + params;
+}
+
+function hqHandleOAuthReturn(){
+  const hash = window.location.hash.slice(1);
+  if(!hash.includes('access_token=')) return;
+  const p = new URLSearchParams(hash);
+  const token = p.get('access_token');
+  if(token){
+    _token = token;
+    localStorage.setItem(LS_TOKEN, token);
+    history.replaceState(null,'',window.location.pathname);
+    hqSetConnected(true);
+    hqLoadAll();
+  }
+}
+
+function hqSetConnected(yes){
+  const dot = document.getElementById('hqStatusDot');
+  const btn = document.getElementById('hqAuthBtn');
+  dot.classList.toggle('connected', yes);
+  btn.textContent = yes ? 'Connected ✓' : 'Connect Sheets';
+  btn.style.background = yes ? 'rgba(107,191,143,0.15)' : '';
+  btn.style.border = yes ? '1px solid rgba(107,191,143,0.3)' : '';
+  btn.style.color = yes ? 'var(--green)' : '';
+  btn.onclick = yes ? ()=>{} : hqConnect;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GEMINI KEY LOADING
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadGeminiKeys(){
+  if(_geminiKeys.length) return _geminiKeys;
+  if(!_token) return [];
+  try{
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${PRASHANT_SHEET_ID}/values/config!A:B`;
+    const r = await fetchWithTimeout(url,{headers:{Authorization:`Bearer ${_token}`}});
+    if(!r.ok) return [];
+    const d = await r.json();
+    const rows = d.values||[];
+    const keys = rows.filter(r=>r[0]&&r[0].startsWith('gemini_key')&&r[1]).map(r=>r[1].trim());
+    if(keys.length) _geminiKeys = keys;
+  }catch(e){ console.warn('loadGeminiKeys:', e.message); }
+  return _geminiKeys;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FAMILY DATA LOADING
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function hqLoadAll(){
+  hqSetConnected(true);
+  renderFamilyCardSkeletons();
+  await loadGeminiKeys();
+
+  // Load all active families in parallel
+  const active = FAMILIES.filter(f=>!f.comingSoon);
+  await Promise.allSettled(active.map(f => loadFamilyData(f)));
+  renderAllFamilyCards();
+  renderActionQueue();
+  updateTotalBar();
+}
+
+async function loadFamilyData(family){
+  if(!_token) return;
+  try{
+    // Load portfolio_snapshot tab
+    const snapUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/portfolio_snapshot!A:H?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`;
+    const r = await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${_token}`}});
+    if(!r.ok){ _familyData[family.name]={loaded:true, error: `HTTP ${r.status}`, holdings:[]}; return; }
+    const data = await r.json();
+    const rows = (data.values||[]).slice(1); // skip header
+
+    const holdings = rows.map(row=>({
+      id:       row[0],
+      fund:     row[1]||'',
+      investor: row[2]||'',
+      invested: parseFloat(row[3])||0,
+      value:    parseFloat(row[4])||0,
+      asOfDate: row[5]||'',
+      updatedBy:row[6]||'',
+    })).filter(h=>h.fund&&h.investor);
+
+    const totalValue    = holdings.reduce((s,h)=>s+(h.value||0), 0);
+    const totalInvested = holdings.reduce((s,h)=>s+(h.invested||0), 0);
+
+    // Staleness alerts
+    const alerts = [];
+    const now = Date.now();
+    holdings.forEach(h=>{
+      if(!h.asOfDate || h.asOfDate==='—'){
+        alerts.push({priority:'high', fund:h.fund, investor:h.investor, msg:'No value date on record'});
+      } else if(h.value === 0 && h.invested > 0){
+        alerts.push({priority:'high', fund:h.fund, investor:h.investor, msg:'Current value is ₹0'});
+      }
+    });
+
+    _familyData[family.name] = { loaded:true, holdings, totalValue, totalInvested, alerts };
+  }catch(e){
+    _familyData[family.name]={loaded:true, error:e.message, holdings:[], totalValue:0, totalInvested:0, alerts:[]};
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RENDERING
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderFamilyCardSkeletons(){
+  const grid = document.getElementById('hqCards');
+  grid.innerHTML = FAMILIES.map(f=>`
+    <div class="family-card ${f.comingSoon?'coming-soon':''}">
+      <div class="family-card-accent" style="background:${f.color}"></div>
+      <div class="family-card-header">
+        <span class="family-name">${f.name}</span>
+        <span class="family-badge loading">${f.comingSoon?'Coming Soon':'Loading…'}</span>
+      </div>
+      ${f.comingSoon ? '<div style="color:var(--text-dim);font-size:11px;margin-top:8px">Dashboard not yet set up</div>'
+        : '<div class="family-skeleton wide"></div><div class="family-skeleton narrow"></div>'}
+    </div>`).join('');
+}
+
+function renderAllFamilyCards(){
+  const grid = document.getElementById('hqCards');
+  grid.innerHTML = FAMILIES.map(f=>{
+    if(f.comingSoon) return `
+      <div class="family-card coming-soon">
+        <div class="family-card-accent" style="background:${f.color}"></div>
+        <div class="family-card-header">
+          <span class="family-name">${f.name}</span>
+          <span class="family-badge soon">Coming Soon</span>
+        </div>
+        <div style="color:var(--text-dim);font-size:11px;margin-top:6px">
+          Dashboard not yet configured
+        </div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">
+          ${f.investors.join(' · ')}
+        </div>
+      </div>`;
+
+    const d = _familyData[f.name];
+    if(!d) return '';
+    if(d.error) return `
+      <div class="family-card">
+        <div class="family-card-accent" style="background:${f.color}"></div>
+        <div class="family-card-header">
+          <span class="family-name">${f.name}</span>
+          <span class="family-badge stale">Error</span>
+        </div>
+        <div style="color:var(--red);font-size:11px;margin-top:8px">${d.error}</div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:6px">
+          Open the ${f.name} dashboard and refresh NAVs to sync data
+        </div>
+      </div>`;
+
+    const hasData = d.holdings.length > 0;
+    const gain = d.totalValue - d.totalInvested;
+    const gainPct = d.totalInvested > 0 ? (gain/d.totalInvested*100) : 0;
+    const alertCount = d.alerts.length;
+
+    return `
+      <div class="family-card" onclick="if(event.target.tagName!=='BUTTON'){}">
+        <div class="family-card-accent" style="background:${f.color}"></div>
+        <div class="family-card-header">
+          <span class="family-name">${f.name}</span>
+          <span class="family-badge ${alertCount>0?'stale':'ok'}">${alertCount>0?alertCount+' Alert'+(alertCount>1?'s':''):'Up to date'}</span>
+        </div>
+        ${hasData ? `
+          <div class="family-value" style="color:${f.color}">${fmtCr(d.totalValue)}</div>
+          <div class="family-invested">Invested: ${fmtCr(d.totalInvested)}</div>
+          <div class="family-gain ${gain>=0?'pos':'neg'}">
+            ${gain>=0?'+':''}${fmtCr(Math.abs(gain))} (${gainPct>=0?'+':''}${gainPct.toFixed(1)}%)
+          </div>
+        ` : `
+          <div style="color:var(--text-dim);font-size:11px;margin:10px 0">
+            No snapshot data — open the ${f.name} dashboard and Refresh NAVs to sync
+          </div>
+        `}
+        <div class="family-meta">
+          <span class="family-holdings">${d.holdings.length} holdings synced</span>
+          ${f.dashUrl?`<button class="family-open-btn" onclick="window.open('${f.dashUrl}','_blank')">Open Dashboard ↗</button>`:''}
+        </div>
+        ${alertCount>0?`
+        <div class="family-alerts">
+          ${d.alerts.slice(0,2).map(a=>`
+            <div class="family-alert-item">
+              <div class="family-alert-dot ${a.priority==='medium'?'amber':''}"></div>
+              <span>${shortInv(a.investor)} · ${(a.fund||'').substring(0,30)}${(a.fund||'').length>30?'…':''} — ${a.msg}</span>
+            </div>`).join('')}
+          ${alertCount>2?`<div class="family-alert-item"><span>+${alertCount-2} more</span></div>`:''}
+        </div>`:''}
+      </div>`;
+  }).join('');
+}
+
+function renderActionQueue(){
+  const body = document.getElementById('hqAqBody');
+  const countEl = document.getElementById('hqAqCount');
+  const allAlerts = [];
+
+  FAMILIES.filter(f=>!f.comingSoon).forEach(f=>{
+    const d = _familyData[f.name];
+    if(!d||d.error) return;
+    d.alerts.forEach(a => allAlerts.push({...a, family:f.name, color:f.color}));
+  });
+
+  // Sort by priority
+  const order = {high:0, medium:1, low:2};
+  allAlerts.sort((a,b)=>(order[a.priority]||9)-(order[b.priority]||9));
+
+  countEl.textContent = allAlerts.length ? allAlerts.length + ' item' + (allAlerts.length>1?'s':'') : '✓ All clear';
+  countEl.className = 'hq-aq-count' + (allAlerts.length===0?' green':'');
+
+  if(!allAlerts.length){
+    body.innerHTML = '<div class="aq-empty">✓ No items need attention across all family portfolios</div>';
+    return;
+  }
+
+  body.innerHTML = allAlerts.map(a=>`
+    <div class="aq-item">
+      <div class="aq-priority ${a.priority}"></div>
+      <div class="aq-body">
+        <div class="aq-fund">${a.fund||'Unknown'}</div>
+        <div class="aq-meta">${shortInv(a.investor)} · ${a.msg}</div>
+      </div>
+      <span class="aq-family-tag" style="background:${a.color}22;color:${a.color}">${a.family}</span>
+      <button class="aq-action-btn" onclick="hqQuickAction(${JSON.stringify(a).replace(/'/g,'&apos;')})">Fix →</button>
+    </div>`).join('');
+}
+
+function updateTotalBar(){
+  const total = Object.values(_familyData).reduce((s,d)=>s+(d.totalValue||0),0);
+  if(!total) return;
+  document.getElementById('hqTotalVal').textContent = fmtCr(total);
+  document.getElementById('hqLastUpdated').textContent = '· Updated ' + fmtDate(new Date());
+  document.getElementById('hqTotalBar').style.display = 'flex';
+}
+
+function hqQuickAction(alert){
+  const msg = `The ${alert.fund} (${alert.investor}) needs attention: ${alert.msg}. Can you help me fix this?`;
+  document.getElementById('hqInput').value = msg;
+  document.getElementById('hqInput').focus();
+  _routedFamily = alert.family;
+  showHqRouting(alert.family);
+}
+
+function showHqRouting(family){
+  if(!family){ clearHqRouting(); return; }
+  document.getElementById('hqRoutingFamily').textContent = family;
+  document.getElementById('hqRouting').classList.add('visible');
+}
+function clearHqRouting(){
+  _routedFamily = null;
+  document.getElementById('hqRouting').classList.remove('visible');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI COMMAND BAR
+// ══════════════════════════════════════════════════════════════════════════════
+
+function buildHqSystemPrompt(){
+  // Build compact holding summaries from loaded data
+  const familyCtx = FAMILIES.filter(f=>!f.comingSoon).map(f=>{
+    const d = _familyData[f.name];
+    if(!d||!d.holdings.length) return `${f.name} family (${f.investors.join(', ')}): no data loaded yet`;
+    const sample = d.holdings.slice(0,30).map(h=>`${h.investor}|${h.fund}|₹${(h.value/1e5).toFixed(0)}L`);
+    return `${f.name} family (${f.investors.join(', ')}): ${d.holdings.length} holdings, total ₹${(d.totalValue/1e7).toFixed(1)}Cr\nSample: ${sample.join('; ')}`;
+  }).join('\n\n');
+
+  return `You are the AI assistant for the Bokaria Family Investment HQ dashboard.
+You help Priya manage investments across ALL family portfolios from one place.
+
+FAMILY PORTFOLIOS:
+${familyCtx}
+
+INVESTORS BY FAMILY:
+${FAMILIES.map(f=>`- ${f.name}: ${f.investors.join(', ')}`).join('\n')}
+
+CURRENT ROUTING CONTEXT: ${_routedFamily ? `Priya is working on the ${_routedFamily} family` : 'No family selected yet'}
+
+RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
+{
+  "family": "Prashant"|"Piyush"|"Prabin"|"Umed Singh"|null,
+  "intent": "update_value"|"add_asset"|"query"|"briefing"|"clarify"|"out_of_scope",
+  "confidence": "high"|"medium"|"low",
+  "investor": string_or_null,
+  "fund_match": string_or_null,
+  "folio": string_or_null,
+  "new_value": number_or_null,
+  "requires_clarification": boolean,
+  "clarification_question": string_or_null,
+  "options": array_or_null,
+  "action_preview": string_or_null,
+  "response_text": string,
+  "is_read_only": boolean
+}
+
+RULES:
+1. ALWAYS identify the family first. Each investor name uniquely maps to one family.
+2. If the family cannot be determined, ask: "Which family — Prashant, Piyush, or Prabin?"
+3. For write actions: requires explicit confirmation before anything is saved.
+4. If investor not named in the message → requires_clarification=true (confirm investor).
+5. NEVER invent fund names or investors not in the portfolio data above.
+6. Indian amounts: 1 lakh=100000, 1 crore=10000000, 1L=100000, 1Cr=10000000.
+7. Queries are read-only (is_read_only=true).
+8. Return ONLY raw JSON. English only. Options max 4 items.`;
+}
+
+async function callHqGemini(userInput){
+  const keys = await loadGeminiKeys();
+  if(!keys.length) throw new Error('No Gemini API key found. Check the config tab in the Prashant Sheet.');
+  const key = keys[_geminiIdx % keys.length];
+  const sysPrompt = buildHqSystemPrompt();
+  const messages = [..._aiThread, {role:'user', parts:[{text:userInput}]}];
+
+  const res = await fetchWithTimeout(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
+    {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        system_instruction:{parts:[{text:sysPrompt}]},
+        contents: messages,
+        generationConfig:{temperature:0, maxOutputTokens:2000, responseMimeType:'application/json'}
+      })
+    }
+  );
+  if(!res.ok){
+    if(res.status===429) _geminiIdx++;
+    throw new Error(`Gemini error ${res.status}${res.status===429?' — rate limit, try again in a moment':''}`);
+  }
+  const data = await res.json();
+  let raw = data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  raw = raw.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');
+  const brace = raw.indexOf('{');
+  if(brace>0) raw = raw.slice(brace);
+  const result = JSON.parse(raw);
+
+  // Code-level safety: write + null investor → force clarification
+  const writeIntents = new Set(['update_value','add_asset','delete_holding']);
+  if(writeIntents.has(result.intent) && !result.investor && !result.requires_clarification){
+    result.requires_clarification = true;
+    result.clarification_question = result.clarification_question || 'Which investor is this for?';
+  }
+
+  // Update routing if family was detected
+  if(result.family && !_routedFamily){
+    _routedFamily = result.family;
+    showHqRouting(result.family);
+  }
+
+  _aiThread.push({role:'user', parts:[{text:userInput}]});
+  _aiThread.push({role:'model', parts:[{text:JSON.stringify(result)}]});
+  if(_aiThread.length > 12) _aiThread = _aiThread.slice(-12);
+
+  return result;
+}
+
+function hqAppendMsg(type, html){
+  const thread = document.getElementById('hqThread');
+  if(!thread) return;
+  const div = document.createElement('div');
+  div.className = `hq-msg ${type}`;
+  div.innerHTML = `<div class="hq-bubble">${html}</div>`;
+  thread.appendChild(div);
+  thread.scrollTop = thread.scrollHeight;
+  document.getElementById('hqThreadWrap').classList.add('open');
+  return div;
+}
+
+function showHqThinking(){
+  const thread = document.getElementById('hqThread');
+  const div = document.createElement('div');
+  div.className = 'hq-msg ai hq-thinking-wrap';
+  div.innerHTML = `<div class="hq-bubble"><div class="hq-thinking">
+    Thinking<div class="hq-dots"><span></span><span></span><span></span></div>
+  </div></div>`;
+  thread.appendChild(div);
+  thread.scrollTop = thread.scrollHeight;
+  document.getElementById('hqThreadWrap').classList.add('open');
+  return div;
+}
+
+function renderHqResponse(result, userInput){
+  const fam = getFamilyConfig(result.family);
+
+  if(result.requires_clarification){
+    let html = `${result.response_text||result.clarification_question||'Could you clarify?'}`;
+    if(result.options?.length){
+      html += `<div class="hq-options">${result.options.map(o=>
+        `<button class="hq-opt" onclick="hqSend(${JSON.stringify(o)})">${o}</button>`).join('')}</div>`;
+    }
+    hqAppendMsg('ai', html);
+    return;
+  }
+
+  if(result.is_read_only){
+    hqAppendMsg('ai', result.response_text||'Done.');
+    return;
+  }
+
+  if(result.action_preview){
+    const thread = document.getElementById('hqThread');
+    const card = document.createElement('div');
+    card.className = 'hq-bubble hq-confirm-card';
+    card.style.maxWidth='90%';
+    card.innerHTML = `
+      <div class="hq-confirm-label">⚠ Confirm Change</div>
+      ${fam?`<div class="hq-confirm-family" style="background:${fam.color}22;color:${fam.color}">
+        ${fam.name} Family
+      </div>`:''}
+      <div class="hq-confirm-detail">${result.action_preview}</div>
+      <div class="hq-confirm-actions">
+        <button class="hq-confirm-ok" onclick="executeHqAction(${JSON.stringify(JSON.stringify(result))},this.closest('.hq-confirm-card'))">Confirm</button>
+        <button class="hq-confirm-cancel" onclick="this.closest('.hq-confirm-card').remove();hqAppendMsg('ai','Cancelled — no changes made.')">Cancel</button>
+      </div>`;
+    const wrap = document.createElement('div');
+    wrap.className='hq-msg ai';
+    wrap.appendChild(card);
+    thread.appendChild(wrap);
+    thread.scrollTop = thread.scrollHeight;
+    document.getElementById('hqThreadWrap').classList.add('open');
+  }
+}
+
+async function executeHqAction(resultStr, cardEl){
+  const result = JSON.parse(resultStr);
+  if(cardEl) cardEl.remove();
+
+  const fam = getFamilyConfig(result.family);
+  if(!fam || fam.comingSoon){
+    hqAppendMsg('error','⚠ This family\'s dashboard is not yet set up. No changes were made.');
+    return;
+  }
+  if(!_token){
+    hqAppendMsg('error','⚠ Not connected to Sheets. Click Connect Sheets and try again.');
+    return;
+  }
+
+  if(result.intent === 'update_value'){
+    const d = _familyData[fam.name];
+    if(!d?.holdings.length){
+      hqAppendMsg('error',`⚠ No portfolio data loaded for ${fam.name}. Open the ${fam.name} dashboard and refresh NAVs first.`);
+      return;
+    }
+    // Find the holding row number in portfolio_snapshot
+    const match = d.holdings.find(h=>{
+      const fundOk = result.fund_match && (
+        h.fund.toLowerCase().includes(result.fund_match.toLowerCase().slice(0,15)) ||
+        result.fund_match.toLowerCase().includes(h.fund.toLowerCase().slice(0,15))
+      );
+      const invOk = !result.investor || h.investor === result.investor;
+      return fundOk && invOk;
+    });
+    if(!match){
+      hqAppendMsg('error',`⚠ Could not find this holding in the ${fam.name} portfolio snapshot. Try opening the ${fam.name} dashboard directly.`);
+      return;
+    }
+
+    // Find row index in Sheet (header is row 1, data starts row 2)
+    const rowIdx = d.holdings.indexOf(match) + 2;
+    const today = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+
+    try{
+      // Update currentValue (col E = index 5) and asOfDate (col F = index 6) and updatedBy (col G = index 7)
+      const range = `portfolio_snapshot!E${rowIdx}:G${rowIdx}`;
+      const res = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+        {
+          method:'PUT',
+          headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+          body: JSON.stringify({values:[[result.new_value, today, 'HQ AI']]})
+        }
+      );
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      match.value = result.new_value;
+      match.asOfDate = today;
+      renderAllFamilyCards();
+      renderActionQueue();
+      updateTotalBar();
+      hqAppendMsg('ai',`✓ Updated <strong>${match.fund}</strong> (${shortInv(match.investor)}) to <strong>${fmtCr(result.new_value)}</strong> in the ${fam.name} Sheet.`);
+    }catch(e){
+      hqAppendMsg('error',`⚠ Save failed: ${e.message}`);
+    }
+    return;
+  }
+
+  if(result.intent === 'add_asset'){
+    // Build new holding and append to new_holdings tab
+    const newRow = [
+      Date.now(), result.fund_match||'', result.investor||'',
+      'MF','Equity','','', result.new_value||0, result.new_value||0,
+      '','','','','', new Date().toLocaleDateString('en-IN'), '',
+      result.fund_match||'', ''
+    ];
+    try{
+      const res = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        {
+          method:'POST',
+          headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+          body: JSON.stringify({values:[newRow]})
+        }
+      );
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      hqAppendMsg('ai',`✓ Added <strong>${result.fund_match}</strong> (${shortInv(result.investor||'')}) to the ${fam.name} Sheet. Open the ${fam.name} dashboard to fill in full details.`);
+    }catch(e){
+      hqAppendMsg('error',`⚠ Save failed: ${e.message}`);
+    }
+    return;
+  }
+
+  hqAppendMsg('ai', `This action (${result.intent}) should be done in the ${fam.name} dashboard directly for now.`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FILE ATTACHMENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+function hqAddFiles(fileList){
+  for(const f of fileList){
+    const ok = /\.(xlsx|xls|csv|pdf|png|jpg|jpeg)$/i.test(f.name);
+    if(!ok){ hqAppendMsg('error',`⚠ ${f.name} — unsupported type. Use Excel, CSV, PDF, or image.`); continue; }
+    if(!_aiFiles.some(x=>x.name===f.name&&x.size===f.size)) _aiFiles.push(f);
+  }
+  document.getElementById('hqFileInput').value='';
+  renderHqFileChips();
+}
+
+function removeHqFile(idx){ _aiFiles.splice(idx,1); renderHqFileChips(); }
+
+function renderHqFileChips(){
+  const el = document.getElementById('hqFileChips');
+  const btn = document.getElementById('hqAttachBtn');
+  if(!el) return;
+  if(!_aiFiles.length){ el.style.display='none'; el.innerHTML=''; btn.classList.remove('has-files'); return; }
+  el.style.display='flex';
+  btn.classList.add('has-files');
+  el.innerHTML = _aiFiles.map((f,i)=>`
+    <div class="hq-chip">
+      <span title="${f.name}">${f.name}</span>
+      <button onclick="removeHqFile(${i})">✕</button>
+    </div>`).join('');
+}
+
+async function readFileText(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(ext==='csv') return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=()=>rej(new Error(`Could not read ${file.name}`)); r.readAsText(file); });
+  if(ext==='xlsx'||ext==='xls'){
+    const ab=await file.arrayBuffer(); const wb=new ExcelJS.Workbook(); await wb.xlsx.load(ab);
+    let text=''; wb.worksheets.forEach(s=>{ text+=`\n=== ${s.name} ===\n`; s.eachRow(row=>{ const vals=[]; row.eachCell({includeEmpty:false},c=>{ const v=c.value; if(v!=null) vals.push(typeof v==='object'&&v.text?v.text:String(v)); }); if(vals.length) text+=vals.join('\t')+'\n'; }); }); return text;
+  }
+  if(ext==='pdf'){
+    const pdfjsLib=window.pdfjsLib||window['pdfjs-dist/build/pdf'];
+    if(pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const ab=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+    let text=''; for(let i=1;i<=pdf.numPages;i++){ const p=await pdf.getPage(i); const c=await p.getTextContent(); text+=c.items.map(x=>x.str).join(' ')+'\n'; }
+    return text;
+  }
+  if(/^(png|jpg|jpeg)$/.test(ext)) return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res({type:'image',mimeType:file.type,base64:e.target.result.split(',')[1]}); r.onerror=()=>rej(new Error(`Could not read ${file.name}`)); r.readAsDataURL(file); });
+  throw new Error(`${file.name}: unsupported file type`);
+}
+
+async function extractAndDiff(file, userContext){
+  const keys = await loadGeminiKeys();
+  if(!keys.length) throw new Error('No Gemini key available');
+  const key = keys[_geminiIdx % keys.length];
+  const allInvestors = FAMILIES.flatMap(f=>f.investors).join(', ');
+
+  const sysPrompt = `You are extracting investment holdings from a file for the Bokaria family portfolio.
+KNOWN INVESTORS: ${allInvestors}
+Extract ALL holdings. Return ONLY valid JSON (no markdown):
+{"family_detected":"Prashant"|"Piyush"|"Prabin"|"Umed Singh"|null,"extracted_holdings":[{"investor":string,"fund_name":string,"type":"MF"|"PMS"|"AIF"|"Other","folio":string,"current_value":number,"invested_value":number,"as_of_date":string}],"confidence":"high"|"medium"|"low","notes":string}`;
+
+  const content = await readFileText(file);
+  let parts;
+  if(typeof content==='object'&&content.type==='image'){
+    parts=[{inline_data:{mime_type:content.mimeType,data:content.base64}},{text:`File: ${file.name}\n${userContext}`}];
+  } else {
+    const truncated = typeof content==='string'&&content.length>60000?content.slice(0,60000)+'\n[truncated]':content;
+    parts=[{text:`File: ${file.name}\n\n${truncated}\n\nContext: ${userContext}`}];
+  }
+
+  const res = await fetchWithTimeout(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      system_instruction:{parts:[{text:sysPrompt}]},
+      contents:[{role:'user',parts}],
+      generationConfig:{temperature:0,maxOutputTokens:3000,responseMimeType:'application/json'}
+    })}
+  );
+  if(!res.ok) throw new Error(`Gemini error ${res.status}`);
+  const data = await res.json();
+  let raw=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  raw=raw.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''); const b=raw.indexOf('{'); if(b>0)raw=raw.slice(b);
+  return JSON.parse(raw);
+}
+
+function renderHqDiff(extraction, fileName){
+  const thread = document.getElementById('hqThread');
+  const fam = extraction.family_detected ? getFamilyConfig(extraction.family_detected) : null;
+  const holdings = extraction.extracted_holdings||[];
+  if(!holdings.length){
+    hqAppendMsg('ai',`📎 <strong>${fileName}</strong> — No holdings found.<br><span style="font-size:10px;color:var(--text-dim)">${extraction.notes||'File may not contain portfolio data.'}</span>`);
+    return;
+  }
+
+  // Detect duplicates vs updates vs new
+  const famData = fam ? _familyData[fam.name] : null;
+  const diff = {duplicate:[], update:[], newItems:[]};
+  holdings.forEach(item=>{
+    const inv = item.investor||'';
+    const detectedFam = INVESTOR_TO_FAMILY[inv.toLowerCase()];
+    const fd = detectedFam ? _familyData[detectedFam] : null;
+    if(!fd?.holdings.length){ diff.newItems.push({...item,_detectedFamily:detectedFam}); return; }
+    const match = fd.holdings.find(h=>{
+      const fn=(h.fund||'').toLowerCase(), it=(item.fund_name||'').toLowerCase();
+      return fn.includes(it.slice(0,15))||it.includes(fn.slice(0,15));
+    });
+    if(!match){ diff.newItems.push({...item,_detectedFamily:detectedFam}); return; }
+    const diff_pct = match.value>0 ? Math.abs(match.value-(item.current_value||0))/match.value : 1;
+    if(diff_pct<0.005) diff.duplicate.push({...item,_existing:match,_detectedFamily:detectedFam});
+    else diff.update.push({...item,_existing:match,_proposedValue:item.current_value,_detectedFamily:detectedFam});
+  });
+
+  const total = diff.duplicate.length+diff.update.length+diff.newItems.length;
+  const card = document.createElement('div');
+  card.className='hq-diff-card';
+  card.innerHTML=`
+    <div class="hq-aq-header">
+      <span>📎 ${fileName} — ${total} entr${total!==1?'ies':'y'} found${fam?` · <span style="color:${fam.color}">${fam.name} Family</span>`:''}
+      </span>
+      ${extraction.notes?`<span style="font-size:10px;color:var(--text-dim);font-style:italic">${extraction.notes}</span>`:''}
+    </div>
+    ${diff.duplicate.length?`
+    <div class="hq-diff-section-title dup">✓ Already in dashboard (${diff.duplicate.length}) — same value</div>
+    ${diff.duplicate.map((item,i)=>`
+      <div class="hq-diff-row" data-type="dup" data-idx="${i}">
+        <input type="checkbox" id="hd_dup_${i}" checked>
+        <div class="hq-diff-body">
+          <div class="hq-diff-fund">${item.fund_name}</div>
+          <div class="hq-diff-meta">${shortInv(item.investor)} · ${item._detectedFamily||''}</div>
+          <div class="hq-diff-val" style="color:var(--text-dim)">${fmtCr(item.current_value)}</div>
+        </div>
+      </div>`).join('')}`:''}
+    ${diff.update.length?`
+    <div class="hq-diff-section-title upd">↑ Value updates (${diff.update.length})</div>
+    ${diff.update.map((item,i)=>`
+      <div class="hq-diff-row" data-type="upd" data-idx="${i}">
+        <input type="checkbox" id="hd_upd_${i}" checked>
+        <div class="hq-diff-body">
+          <div class="hq-diff-fund">${item._existing.fund}</div>
+          <div class="hq-diff-meta">${shortInv(item.investor)} · ${item._detectedFamily||''}</div>
+          <div class="hq-diff-val">
+            <span style="text-decoration:line-through;color:var(--text-dim)">${fmtCr(item._existing.value)}</span>
+            <span style="color:var(--text-dim);margin:0 4px">→</span>
+            <span style="color:var(--accent)">${fmtCr(item._proposedValue)}</span>
+          </div>
+        </div>
+      </div>`).join('')}`:''}
+    ${diff.newItems.length?`
+    <div class="hq-diff-section-title new">+ New additions (${diff.newItems.length})</div>
+    ${diff.newItems.map((item,i)=>`
+      <div class="hq-diff-row" data-type="new" data-idx="${i}">
+        <input type="checkbox" id="hd_new_${i}" checked>
+        <div class="hq-diff-body">
+          <div class="hq-diff-fund">${item.fund_name}</div>
+          <div class="hq-diff-meta">${shortInv(item.investor||'')} · ${item._detectedFamily||'Unknown family'}</div>
+          <div class="hq-diff-val" style="color:var(--green)">${fmtCr(item.current_value)}</div>
+        </div>
+      </div>`).join('')}`:''}
+    <div class="hq-diff-apply-row">
+      <span id="hdStatus" style="font-size:11px;color:var(--text-muted)">Uncheck rows to skip, then Apply.</span>
+      <div style="display:flex;gap:8px">
+        <button class="hq-diff-cancel" onclick="this.closest('.hq-diff-card').remove();hqAppendMsg('ai','Cancelled — no changes made.')">Cancel</button>
+        <button class="hq-diff-apply" onclick="applyHqDiff(this.closest('.hq-diff-card'),${JSON.stringify(JSON.stringify(diff))})">Apply Selected</button>
+      </div>
+    </div>`;
+
+  const wrap=document.createElement('div'); wrap.className='hq-msg ai'; wrap.appendChild(card);
+  thread.appendChild(wrap); thread.scrollTop=thread.scrollHeight;
+  document.getElementById('hqThreadWrap').classList.add('open');
+}
+
+async function applyHqDiff(cardEl, diffStr){
+  const diff = JSON.parse(diffStr);
+  const statusEl = cardEl.querySelector('#hdStatus');
+  const applyBtn = cardEl.querySelector('.hq-diff-apply');
+  applyBtn.disabled=true;
+  if(!_token){ statusEl.style.color='var(--red)'; statusEl.textContent='⚠ Not connected to Sheets.'; applyBtn.disabled=false; return; }
+
+  let applied=0, failed=0, skipped=0;
+  const errors=[];
+
+  for(const [i,item] of diff.update.entries()){
+    const chk=cardEl.querySelector(`#hd_upd_${i}`); if(!chk?.checked){skipped++;continue;}
+    const fam=getFamilyConfig(item._detectedFamily); if(!fam){errors.push(`Unknown family for ${item.fund_name}`);failed++;continue;}
+    statusEl.textContent=`Saving ${item.fund_name}…`;
+    const fd=_familyData[fam.name]; const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2;
+    const today=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+    try{
+      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!E${rowIdx}:G${rowIdx}?valueInputOption=USER_ENTERED`,
+        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[[item._proposedValue,today,'HQ AI']]})});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      item._existing.value=item._proposedValue; applied++;
+    }catch(e){errors.push(`${item.fund_name}: ${e.message}`);failed++;}
+  }
+
+  for(const [i,item] of diff.newItems.entries()){
+    const chk=cardEl.querySelector(`#hd_new_${i}`); if(!chk?.checked){skipped++;continue;}
+    const fam=getFamilyConfig(item._detectedFamily); if(!fam){errors.push(`Unknown family for ${item.fund_name}`);failed++;continue;}
+    statusEl.textContent=`Adding ${item.fund_name}…`;
+    const row=[Date.now(),item.fund_name,item.investor,'MF','Equity','',item.folio||'',item.invested_value||0,item.current_value||0,'','','','','',item.as_of_date||new Date().toLocaleDateString('en-IN'),'',item.fund_name,''];
+    try{
+      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[row]})});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      applied++;
+    }catch(e){errors.push(`${item.fund_name}: ${e.message}`);failed++;}
+  }
+
+  skipped += diff.duplicate.filter((_,i)=>!cardEl.querySelector(`#hd_dup_${i}`)?.checked).length;
+
+  if(applied>0){renderAllFamilyCards();renderActionQueue();updateTotalBar();}
+  const applyRow=cardEl.querySelector('.hq-diff-apply-row');
+  applyRow.innerHTML=errors.length
+    ?`<div style="width:100%"><div style="color:var(--accent);font-size:12px;font-weight:600">✓ ${applied} applied · ${failed} failed · ${skipped} skipped</div>${errors.map(e=>`<div style="font-size:11px;color:var(--red);margin-top:2px">⚠ ${e}</div>`).join('')}</div>`
+    :`<div style="color:var(--green);font-size:12px;font-weight:600;width:100%">✓ Done — ${applied} change${applied!==1?'s':''} applied${skipped?`, ${skipped} skipped`:''}</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN SEND
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function hqSend(prefillText){
+  const inputEl=document.getElementById('hqInput');
+  const sendBtn=document.getElementById('hqSendBtn');
+  const userText=(prefillText||inputEl?.value||'').trim();
+
+  if(_aiFiles.length>0){
+    if(inputEl) inputEl.value='';
+    if(sendBtn) sendBtn.disabled=true;
+    const files=[..._aiFiles];
+    const displayNames=files.map(f=>f.name).join(', ');
+    hqAppendMsg('user',`📎 ${displayNames}${userText?'<br>'+userText:''}`);
+    _aiFiles=[]; renderHqFileChips();
+
+    const thinkEl=showHqThinking();
+    try{
+      for(const file of files){
+        if(thinkEl) thinkEl.querySelector('.hq-bubble').innerHTML=
+          `<div class="hq-thinking">Reading <strong>${file.name}</strong>…<div class="hq-dots"><span></span><span></span><span></span></div></div>`;
+        let content;
+        try{ content=await readFileText(file); }
+        catch(e){ hqAppendMsg('error',`⚠ ${file.name} — ${e.message}`); continue; }
+        if(thinkEl) thinkEl.querySelector('.hq-bubble').innerHTML=
+          `<div class="hq-thinking">Extracting from <strong>${file.name}</strong>…<div class="hq-dots"><span></span><span></span><span></span></div></div>`;
+        let extraction;
+        try{ extraction=await extractAndDiff(file, userText||'Review and update portfolio'); }
+        catch(e){ hqAppendMsg('error',`⚠ ${file.name} — ${e.message}`); continue; }
+        if(extraction.family_detected && !_routedFamily){ _routedFamily=extraction.family_detected; showHqRouting(extraction.family_detected); }
+        renderHqDiff(extraction, file.name);
+      }
+    }finally{ if(thinkEl) thinkEl.remove(); if(sendBtn) sendBtn.disabled=false; inputEl?.focus(); }
+    return;
+  }
+
+  if(!userText) return;
+  if(!_token){ hqAppendMsg('error','⚠ Connect Sheets first to use the AI assistant.'); return; }
+
+  hqAppendMsg('user', userText);
+  if(inputEl) inputEl.value='';
+  if(sendBtn) sendBtn.disabled=true;
+
+  // Quick family detection before Gemini call
+  const detected = detectFamily(userText);
+  if(detected && !_routedFamily){ _routedFamily=detected; showHqRouting(detected); }
+
+  const thinkEl=showHqThinking();
+  try{
+    const result=await callHqGemini(userText);
+    if(thinkEl) thinkEl.remove();
+    renderHqResponse(result, userText);
+  }catch(e){
+    if(thinkEl) thinkEl.remove();
+    hqAppendMsg('error',`⚠ ${e.message||'Something went wrong. Please try again.'}`);
+  }finally{
+    if(sendBtn) sendBtn.disabled=false;
+    inputEl?.focus();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════════════════
+
+(function init(){
+  renderFamilyCardSkeletons();
+  hqHandleOAuthReturn();
+  if(_token){ hqSetConnected(true); hqLoadAll(); }
+})();
+</script>
+</body>
+</html>

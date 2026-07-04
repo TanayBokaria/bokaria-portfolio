@@ -1314,7 +1314,7 @@ function buildHqSystemPrompt(){
       mfH.forEach(h=>{
         const ret = h.invested>0 ? ((h.value-h.invested)/h.invested*100).toFixed(1) : '—';
         const cagr = h.cagr ? h.cagr.toFixed(1) : '—';
-        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.schemeCode||'—'}|${h.category||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.units>0?h.units.toFixed(3):'—'}|${_fmtD(h.navDate)}|${_fmtD(h.purchaseDate)}|${ret}|${cagr}`;
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.schemeCode||'—'}|${h.category||'—'}|${h.invested>=100000?'₹'+(h.invested/1e7).toFixed(2)+'Cr':'₹'+(h.invested/1e5).toFixed(2)+'L'}|${h.value>=100000?'₹'+(h.value/1e7).toFixed(2)+'Cr':'₹'+(h.value/1e5).toFixed(2)+'L'}|${h.units>0?h.units.toFixed(3):'—'}|${_fmtD(h.navDate)}|${_fmtD(h.purchaseDate)}|${ret}|${cagr}`;
       });
     }
 
@@ -1331,7 +1331,8 @@ function buildHqSystemPrompt(){
           staleness = days > 90 ? `${days}d ⚠️STALE` : `${days}d`;
         }
         const _fmtDp = v => {if(!v)return'—';const n=Number(v);return(!isNaN(n)&&n>1000&&n<100000)?new Date((n-25569)*86400*1000).toISOString().slice(0,10):String(v);};
-        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.type}|${h.category||h.type}|${Math.round(h.invested)}|${Math.round(h.value)}|${_fmtDp(h.navDate)}|${staleness}`;
+        const _fmtCrP=(v)=>{const n=parseFloat(v)||0; return n>=100000?'₹'+(n/1e7).toFixed(2)+'Cr':'₹'+(n/1e5).toFixed(2)+'L';};
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.type}|${h.category||h.type}|${_fmtCrP(h.invested)}|${_fmtCrP(h.value)}|${_fmtDp(h.navDate)}|${staleness}`;
       });
     }
 
@@ -1343,8 +1344,12 @@ function buildHqSystemPrompt(){
       ctx += `\nIMPORTANT: Two separate value columns exist — CurrentValue_INR (Indian Rupees ₹) and CurrentValue_USD (US Dollars $). ALWAYS use CurrentValue_USD when asked for USD/dollar amounts. NEVER use CurrentValue_INR for USD answers.`;
       ctx += `\nFamily NYSE totals: INR=₹${(nyseINRTotal/1e7).toFixed(2)}Cr | USD=$${nyseUSDTotal.toFixed(0)}`;
       ctx += `\nInvestor|Ticker|Folio|Invested_INR(₹)|CurrentValue_INR(₹)|CurrentValue_USD($)|NAVDate`;
+      const USD_INR = 95.33; // confirmed exchange rate (total $2,087,342 = ₹19.90Cr)
       nyseH.forEach(h=>{
-        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.usdValue>0?'$'+h.usdValue.toFixed(0):'$0'}|${h.navDate||'—'}`;
+        const inrFmt = h.value>=100000?'₹'+(h.value/1e7).toFixed(2)+'Cr':'₹'+(h.value/1e5).toFixed(2)+'L';
+        const usdAmt = h.usdValue>0 ? h.usdValue : Math.round(h.value/USD_INR);
+        const invFmt = h.invested>=100000?'₹'+(h.invested/1e7).toFixed(2)+'Cr':'₹'+(h.invested/1e5).toFixed(2)+'L';
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${invFmt}|${inrFmt}|$${usdAmt}|${h.navDate||'—'}`;
       });
     }
 
@@ -1356,7 +1361,8 @@ function buildHqSystemPrompt(){
       ctx += `\nHeld by: ${abInvestors.join(', ')}`;
       ctx += `\nInvestor|Stock|Invested₹|CurrentValue₹|Qty|LTP|AsOfDate`;
       abH.forEach(h=>{
-        ctx += `\n${h.investor}|${h.fund}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.units>0?h.units:'—'}|${h.nav>0?h.nav.toFixed(2):'—'}|${h.navDate||'—'}`;
+        const _fmtCrA=(v)=>{const n=parseFloat(v)||0; return n>=100000?'₹'+(n/1e7).toFixed(2)+'Cr':'₹'+(n/1e5).toFixed(2)+'L';};
+        ctx += `\n${h.investor}|${h.fund}|${_fmtCrA(h.invested)}|${_fmtCrA(h.value)}|${h.units>0?h.units:'—'}|${h.nav>0?h.nav.toFixed(2):'—'}|${h.navDate||'—'}`;
       });
     } else {
       ctx += `\n\nAB EQUITY: none on record`;
@@ -1381,9 +1387,9 @@ KEY NOTES:
 - AB Equity = individual NSE/BSE stocks via Aditya Birla brokerage (NOT Aditya Birla Sun Life MFs)
 - PMS/AIF staleness = days since last SOA; ⚠️STALE means >90 days out of date
 - For specific NAV fetch errors, open the individual family dashboard (Data Freshness panel)
-- Indian amounts: 1L=₹1,00,000; 1Cr=₹1,00,00,000
-- NYSE holdings have TWO value columns: CurrentValue_INR(₹) for rupee amounts, CurrentValue_USD($) for dollar amounts. NEVER mix them.
-- NYSE live prices are synced by the individual family dashboard — HQ shows most-recently-synced values. For truly live USD prices, use fetch_then_answer intent with fetch_scope="nyse".
+- CRITICAL: All monetary values in this prompt are PRE-FORMATTED as ₹X.XXCr or ₹X.XXL. Use them as-is. Do NOT convert raw numbers — there are none.
+- NYSE: CurrentValue_INR(₹) = rupee amount; CurrentValue_USD($) = dollar amount derived at ₹95.33/USD. Use CurrentValue_USD($) when user asks for USD.
+- NYSE live prices: for fresh data use fetch_then_answer intent with fetch_scope="nyse".
 
 RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
 {

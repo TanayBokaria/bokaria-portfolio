@@ -1403,7 +1403,7 @@ async function callHqGemini(userInput){
       body: JSON.stringify({
         system_instruction:{parts:[{text:sysPrompt}]},
         contents: messages,
-        generationConfig:{temperature:0, maxOutputTokens:4000, responseMimeType:'application/json'}
+        generationConfig:{temperature:0, maxOutputTokens:4000, responseMimeType:'application/json', thinkingConfig:{thinkingBudget:0}}
       })
     }
   );

@@ -872,9 +872,6 @@ async function loadFamilyData(family){
       asOfDate:     row[13]||row[0]||'',
     })).filter(h=>h.fund&&h.investor);
 
-    const totalValue    = holdings.reduce((s,h)=>s+(h.value||0), 0);
-    const totalInvested = holdings.reduce((s,h)=>s+(h.invested||0), 0);
-
     // Staleness alerts
     const alerts = [];
     holdings.forEach(h=>{
@@ -899,6 +896,47 @@ async function loadFamilyData(family){
         }
       }
     }catch(e2){ /* config tab may not exist yet */ }
+
+    // ── Also read new_holdings tab and merge any entries absent from snapshot ──
+    // Individual dashboards append Add Fund entries to new_holdings; writePortfolioSnapshot
+    // may not have been called since, leaving HQ blind to those rows (e.g. NYSE RSUs).
+    try{
+      const nhUrl = `https://sheets.googleapis.com/v4/spreadsheets/${family.sheetId}/values/new_holdings!A:T?valueRenderOption=UNFORMATTED_VALUE`;
+      const nhResp = await fetchWithTimeout(nhUrl, {headers:{Authorization:`Bearer ${_token}`}});
+      if(nhResp.ok){
+        const nhData = await nhResp.json();
+        const nhRows = (nhData.values||[]).slice(1); // skip header row
+        // De-duplicate: skip rows already present in snapshot (match by investor + originalName)
+        const existingKeys = new Set(holdings.map(h=>`${h.investor}|||${h.fund}`));
+        let merged = 0;
+        for(const row of nhRows){
+          const fund     = row[2]||row[3]||'';
+          const investor = row[1]||'';
+          if(!fund||!investor) continue;
+          const key = `${investor}|||${fund}`;
+          if(existingKeys.has(key)) continue; // already in snapshot
+          holdings.push({
+            fund, originalName:row[2]||'', currentName:row[3]||'',
+            investor, type:row[4]||'MF', category:row[5]||'',
+            folio:String(row[6]||''), invested:parseFloat(row[7])||0,
+            value:parseFloat(row[8])||0, gain:parseFloat(row[9])||0,
+            gainPct:parseFloat(row[10])||0, cagr:parseFloat(row[11])||0,
+            nav:parseFloat(row[12])||0, navDate:row[13]||'',
+            purchaseDate:row[14]||'', schemeCode:String(row[16]||''),
+            currency:row[17]||'INR', usdValue:parseFloat(row[18])||0,
+            units:parseFloat(row[19])||0, asOfDate:row[13]||row[0]||'',
+            _fromNewHoldings:true
+          });
+          existingKeys.add(key);
+          merged++;
+        }
+        if(merged>0) console.log(`[HQ] ${family.name}: merged ${merged} holdings from new_holdings tab`);
+      }
+    }catch(nhErr){ /* new_holdings tab may not exist yet — non-fatal */ }
+
+    // Recompute totals after merge
+    const totalValue    = holdings.reduce((s,h)=>s+(h.value||0), 0);
+    const totalInvested = holdings.reduce((s,h)=>s+(h.invested||0), 0);
 
     _familyData[family.name] = { loaded:true, holdings, totalValue, totalInvested, alerts, autoRefreshStatus };
   }catch(e){
@@ -1297,12 +1335,16 @@ function buildHqSystemPrompt(){
       });
     }
 
-    // ── NYSE — with USD values
+    // ── NYSE — with USD values clearly labelled
     if(nyseH.length){
-      ctx += `\n\nNYSE / US STOCKS (${nyseH.length})`;
-      ctx += `\nInvestor|Ticker/Fund|Folio|Invested₹|CurrentValue₹|USDValue|Currency|NAVDate`;
+      const nyseUSDTotal = nyseH.reduce((s,h)=>s+(h.usdValue||0),0);
+      const nyseINRTotal = nyseH.reduce((s,h)=>s+(h.value||0),0);
+      ctx += `\n\nNYSE / US STOCKS (${nyseH.length} positions)`;
+      ctx += `\nIMPORTANT: Two separate value columns exist — CurrentValue_INR (Indian Rupees ₹) and CurrentValue_USD (US Dollars $). ALWAYS use CurrentValue_USD when asked for USD/dollar amounts. NEVER use CurrentValue_INR for USD answers.`;
+      ctx += `\nFamily NYSE totals: INR=₹${(nyseINRTotal/1e7).toFixed(2)}Cr | USD=$${nyseUSDTotal.toFixed(0)}`;
+      ctx += `\nInvestor|Ticker|Folio|Invested_INR(₹)|CurrentValue_INR(₹)|CurrentValue_USD($)|NAVDate`;
       nyseH.forEach(h=>{
-        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.usdValue>0?h.usdValue.toFixed(0):'—'}|${h.currency||'USD'}|${h.navDate||'—'}`;
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.usdValue>0?'$'+h.usdValue.toFixed(0):'$0'}|${h.navDate||'—'}`;
       });
     }
 
@@ -1340,11 +1382,14 @@ KEY NOTES:
 - PMS/AIF staleness = days since last SOA; ⚠️STALE means >90 days out of date
 - For specific NAV fetch errors, open the individual family dashboard (Data Freshness panel)
 - Indian amounts: 1L=₹1,00,000; 1Cr=₹1,00,00,000
+- NYSE holdings have TWO value columns: CurrentValue_INR(₹) for rupee amounts, CurrentValue_USD($) for dollar amounts. NEVER mix them.
+- NYSE live prices are synced by the individual family dashboard — HQ shows most-recently-synced values. For truly live USD prices, use fetch_then_answer intent with fetch_scope="nyse".
 
 RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
 {
   "family": "Prashant"|"Piyush"|"Prabin"|"Umed Singh"|null,
-  "intent": "update_value"|"add_asset"|"fix_scheme_code"|"update_folio"|"update_purchase_date"|"update_invested"|"update_category"|"update_pms_soa_date"|"update_current_name"|"delete_holding"|"navigate"|"query"|"briefing"|"clarify"|"out_of_scope",
+  "intent": "update_value"|"add_asset"|"fix_scheme_code"|"update_folio"|"update_purchase_date"|"update_invested"|"update_category"|"update_pms_soa_date"|"update_current_name"|"delete_holding"|"navigate"|"fetch_then_answer"|"query"|"briefing"|"clarify"|"out_of_scope",
+  "fetch_scope": "mf"|"nyse"|"all"|null,
   "confidence": "high"|"medium"|"low",
   "investor": string_or_null,
   "fund_match": string_or_null,
@@ -1404,6 +1449,13 @@ PHASE 5 — FILE WORKFLOW GUIDANCE (HQ):
 - "upload SOA for Piyush" → tell user to open Piyush dashboard and use the Upload Statement button or AI bar paperclip
 - "import AB file for Prabin" → tell user to open Prabin dashboard and click Import AB Holdings
 - HQ does not process file uploads — direct users to the correct family dashboard.
+
+FETCH_THEN_ANSWER INTENT — live data refresh before answering:
+- Use intent="fetch_then_answer" when the user asks for "latest", "current", "live", "today's", or "real-time" values AND the query is about MF NAVs or NYSE stock prices.
+- Set fetch_scope: "mf" for mutual fund NAV queries, "nyse" for US stock queries, "all" for both.
+- Set response_text to a brief explanation e.g. "Let me fetch the latest NAV data first, then I'll answer."
+- is_read_only: true. Do NOT combine with write intents.
+- For NYSE specifically: note in response_text that live USD prices require the individual dashboard to sync — HQ can show the most recently synced values.
 
 RULES:
 1. ALWAYS identify the family first. Each investor name uniquely maps to one family.
@@ -2175,6 +2227,92 @@ async function applyHqDiff(cardEl){
 // MAIN SEND
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── Inline AI progress bar (shown in chat thread when AI triggers a scoped refresh) ──
+function hqShowInlineProgress(label, total){
+  const thread = document.getElementById('hqThread');
+  const wrap = document.createElement('div');
+  wrap.className = 'hq-msg ai';
+  const bubble = document.createElement('div');
+  bubble.className = 'hq-bubble hq-ai-progress-bubble';
+  bubble.innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">⟳ ${label}</div>
+    <div style="background:var(--surface);border-radius:4px;overflow:hidden;height:6px;width:100%;margin-bottom:6px">
+      <div id="hqProgressFill" style="height:100%;width:0%;background:var(--accent);transition:width 0.3s ease;border-radius:4px"></div>
+    </div>
+    <div id="hqProgressLabel" style="font-size:11px;color:var(--text-dim)">Starting…</div>`;
+  wrap.appendChild(bubble);
+  thread.appendChild(wrap);
+  thread.scrollTop = thread.scrollHeight;
+  document.getElementById('hqThreadWrap').classList.add('open');
+
+  let done = 0;
+  return {
+    update(n, statusText){
+      done = n;
+      const pct = total > 0 ? Math.round((n/total)*100) : 0;
+      const fill = document.getElementById('hqProgressFill');
+      const lbl  = document.getElementById('hqProgressLabel');
+      if(fill) fill.style.width = pct + '%';
+      if(lbl)  lbl.textContent = statusText || `${n} / ${total} done`;
+    },
+    complete(msg){
+      bubble.innerHTML = `<div style="font-size:12px;color:var(--green)">✓ ${msg||'Done'}</div>`;
+      setTimeout(()=>wrap.remove(), 3000);
+    },
+    remove(){ wrap.remove(); }
+  };
+}
+
+// Run a scoped live refresh and return when complete
+async function runHqScopedRefresh(scope, progressCtrl){
+  // For MF: refresh NAVs for all families (use existing batch infra but report progress here)
+  const active = FAMILIES.filter(f=>!f.comingSoon && f.sheetId);
+  let done = 0;
+
+  if(scope === 'nyse' || scope === 'all'){
+    // NYSE: we don't fetch live prices from the internet (no public API key configured).
+    // Instead, we re-read new_holdings to ensure HQ has complete data (B-05 fix).
+    if(progressCtrl) progressCtrl.update(0, 'Reading latest portfolio data from Sheets…');
+    await Promise.allSettled(active.map(async f=>{
+      await loadFamilyData(f);
+      done++;
+      if(progressCtrl) progressCtrl.update(done, `Synced ${done}/${active.length} families`);
+    }));
+    if(progressCtrl) progressCtrl.complete(`Portfolio data refreshed (${done} families)`);
+    return;
+  }
+
+  if(scope === 'mf' || scope === 'all'){
+    // MF: fetch live NAVs for all families (batched)
+    const total = active.length;
+    if(progressCtrl) progressCtrl.update(0, `Fetching MF NAVs for ${total} families…`);
+    await Promise.allSettled(active.map(async f=>{
+      try{
+        // Read snapshot scheme codes and fetch NAVs
+        const snapRows = _familyData[f.name]?.holdings?.filter(h=>h.type==='MF'&&h.schemeCode) || [];
+        const codes = [...new Set(snapRows.map(h=>h.schemeCode).filter(Boolean))];
+        // Fire parallel NAV fetches (non-blocking — just warm the cache for the re-query)
+        await Promise.allSettled(codes.slice(0,30).map(code=>
+          fetch(`https://api.mfapi.in/mf/${code}/latest`).then(r=>r.json()).then(data=>{
+            const nav = parseFloat(data?.data?.[0]?.nav);
+            const date = data?.data?.[0]?.date;
+            if(nav && date){
+              // Update in-memory holdings
+              (_familyData[f.name]?.holdings||[]).forEach(h=>{
+                if(h.schemeCode===code){ h.nav=nav; h.navDate=date; }
+              });
+            }
+          }).catch(()=>{})
+        ));
+        done++;
+        if(progressCtrl) progressCtrl.update(done, `${f.name} done (${done}/${total})`);
+      }catch(e){ done++; }
+    }));
+    if(progressCtrl) progressCtrl.complete(`NAVs refreshed for ${done} families`);
+    return;
+  }
+}
+
 async function hqSend(prefillText){
   hqHideFixHint();
   const inputEl=document.getElementById('hqInput');
@@ -2224,6 +2362,31 @@ async function hqSend(prefillText){
   try{
     const result=await callHqGemini(userText);
     if(thinkEl) thinkEl.remove();
+
+    // ── fetch_then_answer: AI requests a live refresh before answering ──
+    if(result.intent==='fetch_then_answer'){
+      const scope = result.fetch_scope||'all';
+      const scopeLabel = scope==='nyse'?'NYSE portfolio data':scope==='mf'?'mutual fund NAVs':'portfolio data';
+      // Show brief AI ack message
+      if(result.response_text) hqAppendMsg('ai', result.response_text);
+      // Show inline progress bar
+      const families = FAMILIES.filter(f=>!f.comingSoon&&f.sheetId);
+      const progressCtrl = hqShowInlineProgress(`Refreshing ${scopeLabel}…`, families.length);
+      try{
+        await runHqScopedRefresh(scope, progressCtrl);
+        // Re-query Gemini with fresh context (rebuild system prompt implicitly via buildHqSystemPrompt)
+        const freshResult = await callHqGemini(userText);
+        renderHqResponse(freshResult, userText);
+      }catch(refreshErr){
+        progressCtrl.remove();
+        hqAppendMsg('error',`⚠ Refresh failed: ${refreshErr.message}. Showing last known data.`);
+        // Fall back to answering with stale data
+        const fallbackResult = await callHqGemini(userText);
+        renderHqResponse(fallbackResult, userText);
+      }
+      return;
+    }
+
     renderHqResponse(result, userText);
   }catch(e){
     if(thinkEl) thinkEl.remove();

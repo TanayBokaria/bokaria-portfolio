@@ -1751,30 +1751,7 @@ async function executeHqAction(confirmKey, cardEl){
     return;
   }
 
-  if(result.intent==='navigate'){
-    const action = result.ui_action||'';
-    let msg = result.response_text||'Done.';
-    if(action==='scroll_family' && result.family){
-      const cards = document.querySelectorAll('.family-card');
-      for(const c of cards){if(c.textContent?.includes(result.family)){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.outline='2px solid var(--accent)';setTimeout(()=>{c.style.outline=''},2000);break;}}
-      msg = result.response_text||`Scrolled to ${result.family} family.`;
-    } else if(action==='open_health_check'){
-      runHqHealthChecks?.();
-      msg = result.response_text||'Running HQ health check…';
-    } else if(action==='refresh_all_navs'){
-      hqRefreshAllNAVs?.();
-      msg = result.response_text||'Starting Refresh All NAVs…';
-    } else if(action==='route_family' && result.family){
-      _routedFamily=result.family; showHqRouting(result.family);
-      msg = result.response_text||`Routing to ${result.family} family.`;
-    }
-    if(cardEl) cardEl.closest('.hq-msg')?.remove();
-    hqAppendMsg('ai', msg);
-    return;
-  }
-
-  // Phase 3 — structural writes
-
+  if(result.intent==='update_pms_soa_date'){
     _HQ_WRITE_MAP.update_pms_soa_date={col:'N',label:'SOA Date',getNew:r=>r.new_soa_date,getOld:h=>h.navDate};
     const wmap=_HQ_WRITE_MAP.update_pms_soa_date;
     const d=_familyData[fam.name];

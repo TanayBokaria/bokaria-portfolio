@@ -1271,10 +1271,11 @@ function buildHqSystemPrompt(){
     if(mfH.length){
       ctx += `\n\nMUTUAL FUNDS (${mfH.length} holdings)`;
       ctx += `\nInvestor|Fund|Folio|SchemeCode|Category|Invested₹|CurrentValue₹|Units|NAVDate|PurchaseDate|Return%|CAGR%`;
+      const _fmtD = v => {if(!v)return'—';const n=Number(v);return(!isNaN(n)&&n>1000&&n<100000)?new Date((n-25569)*86400*1000).toISOString().slice(0,10):String(v);};
       mfH.forEach(h=>{
         const ret = h.invested>0 ? ((h.value-h.invested)/h.invested*100).toFixed(1) : '—';
         const cagr = h.cagr ? h.cagr.toFixed(1) : '—';
-        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.schemeCode||'—'}|${h.category||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.units>0?h.units.toFixed(3):'—'}|${h.navDate||'—'}|${h.purchaseDate||'—'}|${ret}|${cagr}`;
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.schemeCode||'—'}|${h.category||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.units>0?h.units.toFixed(3):'—'}|${_fmtD(h.navDate)}|${_fmtD(h.purchaseDate)}|${ret}|${cagr}`;
       });
     }
 
@@ -1285,10 +1286,13 @@ function buildHqSystemPrompt(){
       pmsH.forEach(h=>{
         let staleness = 'NO DATE ⚠️';
         if(h.navDate){
-          const days = Math.floor((_today - new Date(h.navDate))/86400000);
+          const _nd=Number(h.navDate);
+          const _dd=(!isNaN(_nd)&&_nd>1000&&_nd<100000)?new Date((_nd-25569)*86400*1000):new Date(h.navDate);
+          const days = Math.floor((_today - _dd)/86400000);
           staleness = days > 90 ? `${days}d ⚠️STALE` : `${days}d`;
         }
-        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.type}|${h.category||h.type}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.navDate||'—'}|${staleness}`;
+        const _fmtDp = v => {if(!v)return'—';const n=Number(v);return(!isNaN(n)&&n>1000&&n<100000)?new Date((n-25569)*86400*1000).toISOString().slice(0,10):String(v);};
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.type}|${h.category||h.type}|${Math.round(h.invested)}|${Math.round(h.value)}|${_fmtDp(h.navDate)}|${staleness}`;
       });
     }
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-03T18:05:09Z -->
+<!-- build: 2026-07-04T03:34:47Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1962,27 +1962,77 @@ async function hqRefreshAllNAVs(){
 
     if(noUnits > 0) needsUnitsMsg.push(`${f.name}: ${noUnits} holdings missing units (open dashboard → Refresh NAVs once)`);
 
-    // Clear A:S only (19 cols) — NEVER touch col T (Units) so individual dashboard units are preserved
+    // Remove stale AB Equity rows — we'll replace with fresh ones from ab_holdings tab
+    const nonABRows = newRows.filter(r => String(r[4]||'').trim() !== 'AB Equity');
+
+    // Step 4b: Read ab_holdings tab and build fresh AB Equity rows
+    let freshABRows = [];
+    try {
+      const abR = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/ab_holdings!A2:K2000`,
+        {headers:{Authorization:`Bearer ${_token}`}}, 10000
+      );
+      if(abR.ok){
+        const abJson = await abR.json();
+        const ts = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+        freshABRows = (abJson.values||[])
+          .filter(row => row[2] && parseFloat(row[3]||0) > 0) // instrument && qty > 0
+          .map(row => {
+            const invested = parseFloat(row[5])||0;
+            const curVal   = parseFloat(row[6])||0;
+            const pnl      = parseFloat(row[7])||0;
+            const gainPct  = invested > 0 ? ((pnl/invested)*100).toFixed(2)+'%' : '—';
+            return [
+              ts,                                   // A[0]  AsOf
+              row[0]||'',                           // B[1]  Investor
+              row[2]||'',                           // C[2]  Original Name
+              row[2]||'',                           // D[3]  Current Name
+              'AB Equity',                          // E[4]  Type
+              'Equity',                             // F[5]  Category
+              row[1]||'',                           // G[6]  Folio (userId)
+              invested.toFixed(2),                  // H[7]  Invested
+              curVal.toFixed(2),                    // I[8]  Current Value
+              pnl.toFixed(2),                       // J[9]  Gain/Loss
+              gainPct,                              // K[10] Return%
+              '—',                                  // L[11] CAGR
+              (parseFloat(row[8])||0).toFixed(4),  // M[12] LTP (price)
+              row[9]||'',                           // N[13] asOf date
+              '',                                   // O[14] Purchase Date
+              '',                                   // P[15] Holding Period
+              row[2]||'',                           // Q[16] Ticker (instrument name)
+              'INR',                                // R[17] Currency
+              '',                                   // S[18] USD Value
+              String(parseFloat(row[3])||0),        // T[19] Units / Qty
+            ];
+          });
+      }
+    } catch(e){
+      console.warn(`${f.name}: ab_holdings read failed —`, e.message);
+    }
+
+    const allSnapshotRows = [...nonABRows, ...freshABRows];
+
+    // Clear A:T (all 20 cols — includes col T so we can write AB qty + preserve MF units) (19 cols) — NEVER touch col T (Units) so individual dashboard units are preserved
     try{
       await fetchWithTimeout(
         `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values:batchClear`,
         {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
-         body:JSON.stringify({ranges:['portfolio_snapshot!A:S']})},12000
+         body:JSON.stringify({ranges:['portfolio_snapshot!A:T']})},12000
       ).catch(()=>{});
 
       // Rebuild header row — 19 cols only (Units col belongs to individual dashboards)
       const headers=['As Of','Investor','Original Name','Current Name','Type','Category',
         'Folio / Platform','Invested (₹)','Current Value (₹)','Gain/Loss (₹)','Return %',
         'CAGR','NAV / Price','NAV Date','Purchase Date','Holding Period',
-        'Scheme Code / Ticker','Currency','USD Value'];
+        'Scheme Code / Ticker','Currency','USD Value','Units / Qty'];
 
       // Trim each row to 19 cols — col T (Units) stays untouched in the Sheet
-      const trimmedRows = newRows.map(r => r.slice(0,19));
+      // Write all 20 cols (A:T) — col T has MF units (from original read) and AB qty
 
       const res = await fetchWithTimeout(
         `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/portfolio_snapshot!A1?valueInputOption=USER_ENTERED`,
         {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
-         body:JSON.stringify({values:[headers,...trimmedRows]})},20000
+         body:JSON.stringify({values:[headers,...allSnapshotRows]})},20000
       );
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -1995,6 +2045,15 @@ async function hqRefreshAllNAVs(){
         _familyData[f.name].holdings.forEach(h=>{
           const match = newRows.find(r=>r[6]===h.folio&&r[1]===h.investor);
           if(match) h.value = parseFloat(match[8])||h.value;
+        });
+        // Remove stale in-memory AB holdings and add fresh ones
+        _familyData[f.name].holdings = _familyData[f.name].holdings.filter(h=>h.type!=='AB Equity');
+        freshABRows.forEach(r=>{
+          _familyData[f.name].holdings.push({
+            fund:r[2]||'', investor:r[1]||'', type:'AB Equity',
+            folio:r[6]||'', invested:parseFloat(r[7])||0,
+            value:parseFloat(r[8])||0, asOfDate:r[13]||'',
+          });
         });
         _familyData[f.name].totalValue = _familyData[f.name].holdings.reduce((s,h)=>s+(h.value||0),0);
       }
@@ -2010,7 +2069,8 @@ async function hqRefreshAllNAVs(){
 
   summaryEl.style.display='block';
   const msgs = [];
-  msgs.push(`✓ ${totalUpdated} holdings refreshed across ${active.length} families · ${navCount}/${codes.length} NAVs fetched`);
+  const abFamilies = active.filter(f=>(_familyData[f.name]?.holdings||[]).some(h=>h.type==='AB Equity')).length;
+  msgs.push(`✓ ${totalUpdated} holdings refreshed across ${active.length} families · ${navCount}/${codes.length} NAVs fetched${abFamilies>0?' · AB equity included for '+abFamilies+' famil'+(abFamilies===1?'y':'ies'):''}`);
   if(needsUnitsMsg.length) msgs.push(...needsUnitsMsg);
   summaryEl.innerHTML = msgs.join('<br>');
   summaryEl.style.color = needsUnitsMsg.length ? 'var(--accent)' : 'var(--green)';

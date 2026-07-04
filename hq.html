@@ -1343,7 +1343,7 @@ KEY NOTES:
 RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
 {
   "family": "Prashant"|"Piyush"|"Prabin"|"Umed Singh"|null,
-  "intent": "update_value"|"add_asset"|"fix_scheme_code"|"update_folio"|"update_purchase_date"|"update_invested"|"update_category"|"query"|"briefing"|"clarify"|"out_of_scope",
+  "intent": "update_value"|"add_asset"|"fix_scheme_code"|"update_folio"|"update_purchase_date"|"update_invested"|"update_category"|"update_pms_soa_date"|"update_current_name"|"delete_holding"|"query"|"briefing"|"clarify"|"out_of_scope",
   "confidence": "high"|"medium"|"low",
   "investor": string_or_null,
   "fund_match": string_or_null,
@@ -1359,7 +1359,9 @@ RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
   "new_scheme_code": string_or_null,
   "new_folio": string_or_null,
   "new_purchase_date": string_or_null,
-  "new_category": string_or_null
+  "new_category": string_or_null,
+  "new_soa_date": string_or_null,
+  "new_display_name": string_or_null
 }
 
 TABLE_DATA RULES — use table_data whenever the answer is a list or comparison:
@@ -1381,6 +1383,11 @@ PHASE 2 — METADATA CORRECTION INTENTS (is_read_only=false, all require confirm
 - update_invested: user wants to change invested amount. Populate new_value (number, rupees). action_preview: "Update invested for [Fund] ([Investor], [Family]): ₹[old] → ₹[new_value]"
 - update_category: user wants to change category. Populate new_category. Valid: Equity, Debt, Hybrid, Sectoral/Thematic, International, Liquid, Gold, Other. action_preview: "Update category for [Fund] ([Investor], [Family]): [old] → [new_category]"
 For ALL Phase 2 intents: requires_clarification=true if holding is ambiguous or new value is unclear.
+
+PHASE 3 — STRUCTURAL WRITE INTENTS:
+- update_pms_soa_date: set SOA date for PMS/AIF holding. Populate new_soa_date. action_preview: "Update SOA date for [Fund] ([Investor], [Family]): [old] → [new_soa_date]"
+- update_current_name: rename display name of a holding. Populate new_display_name. action_preview: "Rename [Fund] ([Investor], [Family]): [old] → [new_display_name]"
+- delete_holding: IRREVERSIBLE removal. Always requires_clarification=true. In HQ: respond that delete must be done via the individual family dashboard for safety.
 
 RULES:
 1. ALWAYS identify the family first. Each investor name uniquely maps to one family.
@@ -1424,7 +1431,7 @@ async function callHqGemini(userInput){
   const result = safeParseJSON(raw);
 
   // Code-level safety: write + null investor → force clarification
-  const writeIntents = new Set(['update_value','add_asset','delete_holding','fix_scheme_code','update_folio','update_purchase_date','update_invested','update_category']);
+  const writeIntents = new Set(['update_value','add_asset','delete_holding','fix_scheme_code','update_folio','update_purchase_date','update_invested','update_category','update_pms_soa_date','update_current_name']);
   if(writeIntents.has(result.intent) && !result.investor && !result.requires_clarification){
     result.requires_clarification = true;
     result.clarification_question = result.clarification_question || 'Which investor is this for?';
@@ -1704,6 +1711,52 @@ async function executeHqAction(confirmKey, cardEl){
       if(cardEl){cardEl.classList.remove('saving');const ok=cardEl.querySelector('.hq-confirm-ok');if(ok){ok.disabled=false;ok.textContent='Retry';}const cn=cardEl.querySelector('.hq-confirm-cancel');if(cn)cn.disabled=false;}
       hqAppendMsg('error',`⚠ Save failed: ${e.message}`);
     }
+    return;
+  }
+
+  // Phase 3 — structural writes
+  if(result.intent==='update_pms_soa_date'){
+    _HQ_WRITE_MAP.update_pms_soa_date={col:'N',label:'SOA Date',getNew:r=>r.new_soa_date,getOld:h=>h.navDate};
+    const wmap=_HQ_WRITE_MAP.update_pms_soa_date;
+    const d=_familyData[fam.name];
+    const match=d?.holdings?.find(h=>{const fn=result.fund_match||'';const fundOk=fn&&(h.fund.toLowerCase().includes(fn.toLowerCase().slice(0,20))||fn.toLowerCase().includes(h.fund.toLowerCase().slice(0,20)));return fundOk&&(!result.investor||h.investor===result.investor)&&(h.type==='PMS'||h.type==='AIF');});
+    if(!match){if(cardEl)cardEl.closest('.hq-msg')?.remove();hqAppendMsg('error',`⚠ Could not find a PMS/AIF holding matching "${result.fund_match}" in ${fam.name}.`);return;}
+    const rowIdx=d.holdings.indexOf(match)+2;
+    const newVal=String(wmap.getNew(result)||'');
+    const oldVal=wmap.getOld(match)||'—';
+    try{
+      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!N${rowIdx}?valueInputOption=USER_ENTERED`,{method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[[newVal]]})});
+      if(!res.ok)throw new Error(`HTTP ${res.status}`);
+      match.navDate=newVal;
+      try{const arow=[new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}),fam.name,'hq_ai_p3_write',match.investor,match.fund,`SOA Date: ${oldVal} → ${newVal}`,'auto'];await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[arow]})});}catch(le){console.warn(le);}
+      if(cardEl)cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('ai',`<span style="color:var(--green)">✓</span> Updated SOA date for <strong>${match.fund}</strong> (${shortInv(match.investor)}, ${fam.name}): <strong>${oldVal}</strong> → <strong style="color:var(--green)">${newVal}</strong>.`);
+    }catch(e){if(cardEl){cardEl.classList.remove('saving');const ok=cardEl.querySelector('.hq-confirm-ok');if(ok){ok.disabled=false;ok.textContent='Retry';}}hqAppendMsg('error',`⚠ Save failed: ${e.message}`);}
+    return;
+  }
+
+  if(result.intent==='update_current_name'){
+    const d=_familyData[fam.name];
+    const match=d?.holdings?.find(h=>{const fn=result.fund_match||'';return fn&&(h.fund.toLowerCase().includes(fn.toLowerCase().slice(0,20))||fn.toLowerCase().includes(h.fund.toLowerCase().slice(0,20)))&&(!result.investor||h.investor===result.investor);});
+    if(!match){if(cardEl)cardEl.closest('.hq-msg')?.remove();hqAppendMsg('error',`⚠ Could not find "${result.fund_match}" in ${fam.name}.`);return;}
+    const rowIdx=d.holdings.indexOf(match)+2;
+    const newName=String(result.new_display_name||'');
+    const oldName=match.fund||'';
+    try{
+      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!D${rowIdx}?valueInputOption=USER_ENTERED`,{method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[[newName]]})});
+      if(!res.ok)throw new Error(`HTTP ${res.status}`);
+      match.fund=newName; match.currentName=newName;
+      try{const arow=[new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}),fam.name,'hq_ai_p3_write',match.investor,oldName,`Name: ${oldName} → ${newName}`,'auto'];await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[arow]})});}catch(le){console.warn(le);}
+      if(cardEl)cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('ai',`<span style="color:var(--green)">✓</span> Renamed <strong>${oldName}</strong> (${shortInv(match.investor)}, ${fam.name}) to <strong style="color:var(--green)">${newName}</strong>.`);
+    }catch(e){if(cardEl){cardEl.classList.remove('saving');const ok=cardEl.querySelector('.hq-confirm-ok');if(ok){ok.disabled=false;ok.textContent='Retry';}}hqAppendMsg('error',`⚠ Save failed: ${e.message}`);}
+    return;
+  }
+
+  if(result.intent==='delete_holding'){
+    // HQ: delete is too destructive for cross-family operation — route to individual dashboard
+    if(cardEl)cardEl.closest('.hq-msg')?.remove();
+    hqAppendMsg('ai',`⚠ For data safety, deletions must be done directly in the <strong>${fam.name}</strong> family dashboard. Open it, use the AI bar there, and type the delete command.`);
     return;
   }
 

@@ -1343,7 +1343,7 @@ KEY NOTES:
 RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
 {
   "family": "Prashant"|"Piyush"|"Prabin"|"Umed Singh"|null,
-  "intent": "update_value"|"add_asset"|"fix_scheme_code"|"update_folio"|"update_purchase_date"|"update_invested"|"update_category"|"update_pms_soa_date"|"update_current_name"|"delete_holding"|"query"|"briefing"|"clarify"|"out_of_scope",
+  "intent": "update_value"|"add_asset"|"fix_scheme_code"|"update_folio"|"update_purchase_date"|"update_invested"|"update_category"|"update_pms_soa_date"|"update_current_name"|"delete_holding"|"navigate"|"query"|"briefing"|"clarify"|"out_of_scope",
   "confidence": "high"|"medium"|"low",
   "investor": string_or_null,
   "fund_match": string_or_null,
@@ -1361,7 +1361,8 @@ RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
   "new_purchase_date": string_or_null,
   "new_category": string_or_null,
   "new_soa_date": string_or_null,
-  "new_display_name": string_or_null
+  "new_display_name": string_or_null,
+  "ui_action": string_or_null
 }
 
 TABLE_DATA RULES — use table_data whenever the answer is a list or comparison:
@@ -1388,6 +1389,14 @@ PHASE 3 — STRUCTURAL WRITE INTENTS:
 - update_pms_soa_date: set SOA date for PMS/AIF holding. Populate new_soa_date. action_preview: "Update SOA date for [Fund] ([Investor], [Family]): [old] → [new_soa_date]"
 - update_current_name: rename display name of a holding. Populate new_display_name. action_preview: "Rename [Fund] ([Investor], [Family]): [old] → [new_display_name]"
 - delete_holding: IRREVERSIBLE removal. Always requires_clarification=true. In HQ: respond that delete must be done via the individual family dashboard for safety.
+
+PHASE 4 — UI NAVIGATION (HQ, is_read_only=true, no confirm card, no Sheets write):
+Set intent="navigate" and ui_action with one of:
+- "scroll_family": user says "show [family] card", "go to Piyush" → set family field too
+- "open_health_check": user says "run health check", "check system health"
+- "refresh_all_navs": user says "refresh all NAVs", "update all prices"
+- "route_family": user says "work on [family]", "switch to Prabin"
+Set ui_action: null for all non-navigate intents.
 
 RULES:
 1. ALWAYS identify the family first. Each investor name uniquely maps to one family.
@@ -1714,8 +1723,52 @@ async function executeHqAction(confirmKey, cardEl){
     return;
   }
 
+  if(result.intent==='navigate'){
+    const action = result.ui_action||'';
+    let msg = result.response_text||'Done.';
+    if(action==='scroll_family' && result.family){
+      const cards = document.querySelectorAll('.family-card');
+      for(const c of cards){if(c.textContent?.includes(result.family)){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.outline='2px solid var(--accent)';setTimeout(()=>{c.style.outline=''},2000);break;}}
+      msg = result.response_text||`Scrolled to ${result.family} family.`;
+    } else if(action==='open_health_check'){
+      runHqHealthChecks?.();
+      msg = result.response_text||'Running HQ health check…';
+    } else if(action==='refresh_all_navs'){
+      hqRefreshAllNAVs?.();
+      msg = result.response_text||'Starting Refresh All NAVs…';
+    } else if(action==='route_family' && result.family){
+      _routedFamily=result.family; showHqRouting(result.family);
+      msg = result.response_text||`Routing to ${result.family} family.`;
+    }
+    if(cardEl) cardEl.closest('.hq-msg')?.remove();
+    hqAppendMsg('ai', msg);
+    return;
+  }
+
+  if(result.intent==='navigate'){
+    const action = result.ui_action||'';
+    let msg = result.response_text||'Done.';
+    if(action==='scroll_family' && result.family){
+      const cards = document.querySelectorAll('.family-card');
+      for(const c of cards){if(c.textContent?.includes(result.family)){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.outline='2px solid var(--accent)';setTimeout(()=>{c.style.outline=''},2000);break;}}
+      msg = result.response_text||`Scrolled to ${result.family} family.`;
+    } else if(action==='open_health_check'){
+      runHqHealthChecks?.();
+      msg = result.response_text||'Running HQ health check…';
+    } else if(action==='refresh_all_navs'){
+      hqRefreshAllNAVs?.();
+      msg = result.response_text||'Starting Refresh All NAVs…';
+    } else if(action==='route_family' && result.family){
+      _routedFamily=result.family; showHqRouting(result.family);
+      msg = result.response_text||`Routing to ${result.family} family.`;
+    }
+    if(cardEl) cardEl.closest('.hq-msg')?.remove();
+    hqAppendMsg('ai', msg);
+    return;
+  }
+
   // Phase 3 — structural writes
-  if(result.intent==='update_pms_soa_date'){
+
     _HQ_WRITE_MAP.update_pms_soa_date={col:'N',label:'SOA Date',getNew:r=>r.new_soa_date,getOld:h=>h.navDate};
     const wmap=_HQ_WRITE_MAP.update_pms_soa_date;
     const d=_familyData[fam.name];

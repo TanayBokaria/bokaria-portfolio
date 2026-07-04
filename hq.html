@@ -747,6 +747,9 @@ function hqSetConnected(yes){
   btn.style.border = yes ? '1px solid rgba(107,191,143,0.3)' : '';
   btn.style.color = yes ? 'var(--green)' : '';
   btn.onclick = hqConnect; // always clickable — reconnect on session expiry
+  // Start/stop the 15-minute auto_refresh_status poll
+  if(yes) _startAutoRefreshPoll();
+  else _stopAutoRefreshPoll();
 }
 
 function hqShowSessionExpired(){
@@ -1122,7 +1125,12 @@ function _fmtAutoRefresh(s){
       const h=Math.floor(mins/60), m=mins%60;
       parts.push('Auto ↻ in '+(h>0?h+'h ':'')+m+'m');
     } else if(lastRun){
-      parts.push('Auto ↻ overdue');
+      // Show how long overdue — helps distinguish "just missed" vs "trigger broken"
+      const overdueMs = now - (nextRun || lastRun);
+      const overdueH = Math.floor(overdueMs/3600000);
+      const overdueM = Math.floor((overdueMs%3600000)/60000);
+      const overdueLabel = overdueH>0 ? overdueH+'h '+overdueM+'m' : overdueM+'m';
+      parts.push('Auto ↻ overdue by '+overdueLabel);
     }
     if(lastRun){
       const fmt = lastRun.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
@@ -1142,6 +1150,38 @@ function updateTotalBar(){
   document.getElementById('hqTotalVal').textContent = fmtCr(total);
   document.getElementById('hqLastUpdated').textContent = '· Updated ' + fmtDate(new Date());
   document.getElementById('hqTotalBar').style.display = 'flex';
+}
+
+// ── Periodic auto_refresh_status re-poll (every 15 min) ────────────────────────
+// loadFamilyData() is expensive (reads full snapshot). This lightweight version
+// only re-reads the config tab and updates autoRefreshStatus + re-renders cards.
+async function _pollAutoRefreshStatus(){
+  if(!_token) return;
+  const active = FAMILIES.filter(f=>!f.comingSoon && f.sheetId);
+  await Promise.allSettled(active.map(async f=>{
+    try{
+      const cfgUrl = `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/config!A1:B30?valueRenderOption=UNFORMATTED_VALUE`;
+      const r = await fetchWithTimeout(cfgUrl, {headers:{Authorization:`Bearer ${_token}`}});
+      if(!r.ok) return;
+      const rows = (await r.json()).values||[];
+      const arRow = rows.find(r=>(r[0]||'').toString().trim().toLowerCase()==='auto_refresh_status');
+      if(!arRow||!arRow[1]) return;
+      let status = null;
+      try{ status = JSON.parse(arRow[1]); }catch(e){ return; }
+      if(_familyData[f.name]) _familyData[f.name].autoRefreshStatus = status;
+    }catch(e){ /* non-critical */ }
+  }));
+  renderFamilyCards(); // re-render with fresh status
+}
+
+// Start the 15-minute poll once Sheets connects (called from hqSetConnected)
+let _autoRefreshPollTimer = null;
+function _startAutoRefreshPoll(){
+  if(_autoRefreshPollTimer) clearInterval(_autoRefreshPollTimer);
+  _autoRefreshPollTimer = setInterval(_pollAutoRefreshStatus, 15 * 60 * 1000); // 15 min
+}
+function _stopAutoRefreshPoll(){
+  if(_autoRefreshPollTimer){ clearInterval(_autoRefreshPollTimer); _autoRefreshPollTimer = null; }
 }
 
 function _classifyAlert(alert){

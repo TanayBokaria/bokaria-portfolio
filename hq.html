@@ -1339,7 +1339,7 @@ KEY NOTES:
 RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
 {
   "family": "Prashant"|"Piyush"|"Prabin"|"Umed Singh"|null,
-  "intent": "update_value"|"add_asset"|"query"|"briefing"|"clarify"|"out_of_scope",
+  "intent": "update_value"|"add_asset"|"fix_scheme_code"|"update_folio"|"update_purchase_date"|"update_invested"|"update_category"|"query"|"briefing"|"clarify"|"out_of_scope",
   "confidence": "high"|"medium"|"low",
   "investor": string_or_null,
   "fund_match": string_or_null,
@@ -1351,7 +1351,11 @@ RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
   "action_preview": string_or_null,
   "response_text": string,
   "is_read_only": boolean,
-  "table_data": { "headers": string[], "rows": string[][] } | null
+  "table_data": { "headers": string[], "rows": string[][] } | null,
+  "new_scheme_code": string_or_null,
+  "new_folio": string_or_null,
+  "new_purchase_date": string_or_null,
+  "new_category": string_or_null
 }
 
 TABLE_DATA RULES — use table_data whenever the answer is a list or comparison:
@@ -1364,6 +1368,14 @@ TABLE_DATA RULES — use table_data whenever the answer is a list or comparison:
 - Mark return/gain columns positive with a + prefix when positive (e.g. +42.3%)
 - Keep response_text to 1 brief sentence when table_data is present (the table carries the detail)
 - Set table_data: null for simple one-liner answers
+
+PHASE 2 — METADATA CORRECTION INTENTS (is_read_only=false, all require confirm card):
+- fix_scheme_code: user wants to fix/correct a scheme code. Populate new_scheme_code (string). action_preview: "Fix scheme code for [Fund] ([Investor], [Family]): [old] → [new_scheme_code]"
+- update_folio: user wants to change a folio number. Populate new_folio (string). action_preview: "Update folio for [Fund] ([Investor], [Family]): [old] → [new_folio]"
+- update_purchase_date: user wants to change a purchase date. Populate new_purchase_date (keep user format). action_preview: "Update purchase date for [Fund] ([Investor], [Family]): [old] → [new_purchase_date]"
+- update_invested: user wants to change invested amount. Populate new_value (number, rupees). action_preview: "Update invested for [Fund] ([Investor], [Family]): ₹[old] → ₹[new_value]"
+- update_category: user wants to change category. Populate new_category. Valid: Equity, Debt, Hybrid, Sectoral/Thematic, International, Liquid, Gold, Other. action_preview: "Update category for [Fund] ([Investor], [Family]): [old] → [new_category]"
+For ALL Phase 2 intents: requires_clarification=true if holding is ambiguous or new value is unclear.
 
 RULES:
 1. ALWAYS identify the family first. Each investor name uniquely maps to one family.
@@ -1604,6 +1616,65 @@ async function executeHqAction(confirmKey, cardEl){
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       hqAppendMsg('ai',`✓ Added <strong>${result.fund_match}</strong> (${shortInv(result.investor||'')}) to the ${fam.name} Sheet. Open the ${fam.name} dashboard to fill in full details.`);
     }catch(e){
+      hqAppendMsg('error',`⚠ Save failed: ${e.message}`);
+    }
+    return;
+  }
+
+  // Phase 2 — metadata field writes
+  const _HQ_WRITE_MAP = {
+    fix_scheme_code:     {col:'Q',label:'Scheme Code',    getNew:r=>r.new_scheme_code,   getOld:h=>h.schemeCode},
+    update_folio:        {col:'G',label:'Folio',          getNew:r=>r.new_folio,          getOld:h=>h.folio},
+    update_purchase_date:{col:'O',label:'Purchase Date',  getNew:r=>r.new_purchase_date,  getOld:h=>h.purchaseDate},
+    update_invested:     {col:'H',label:'Invested Amount',getNew:r=>String(r.new_value||0),getOld:h=>fmtCr(h.invested)},
+    update_category:     {col:'F',label:'Category',       getNew:r=>r.new_category,       getOld:h=>h.category},
+  };
+  if(_HQ_WRITE_MAP[result.intent]){
+    const wmap = _HQ_WRITE_MAP[result.intent];
+    const d = _familyData[fam.name];
+    if(!d?.holdings.length){
+      if(cardEl) cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('error',`⚠ No portfolio data loaded for ${fam.name}. Reload Data first.`);
+      return;
+    }
+    const match = d.holdings.find(h=>{
+      const fn=result.fund_match||'';
+      const fundOk=fn&&(h.fund.toLowerCase().includes(fn.toLowerCase().slice(0,20))||fn.toLowerCase().includes(h.fund.toLowerCase().slice(0,20)));
+      const invOk =!result.investor||h.investor===result.investor;
+      const folioOk=!result.folio||String(h.folio)===String(result.folio);
+      return fundOk&&invOk&&folioOk;
+    });
+    if(!match){
+      if(cardEl) cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('error',`⚠ Could not find "${result.fund_match}" in the ${fam.name} portfolio snapshot.`);
+      return;
+    }
+    const rowIdx = d.holdings.indexOf(match)+2;
+    const newVal = String(wmap.getNew(result)??'');
+    const oldVal = wmap.getOld(match);
+    try{
+      const res = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!${wmap.col}${rowIdx}?valueInputOption=USER_ENTERED`,
+        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+         body:JSON.stringify({values:[[newVal]]})}
+      );
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Update in-memory
+      if(result.intent==='fix_scheme_code')      match.schemeCode   =newVal;
+      if(result.intent==='update_folio')          match.folio        =newVal;
+      if(result.intent==='update_purchase_date')  match.purchaseDate =newVal;
+      if(result.intent==='update_invested')       match.invested     =result.new_value||0;
+      if(result.intent==='update_category')       match.category     =newVal;
+      // Audit log
+      try{
+        const arow=[new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}),fam.name,'hq_ai_metadata_write',match.investor,match.fund,`${wmap.label}: ${oldVal} → ${newVal}`,'auto'];
+        await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+          {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[arow]})});
+      }catch(le){console.warn('audit log:',le.message);}
+      if(cardEl) cardEl.closest('.hq-msg')?.remove();
+      hqAppendMsg('ai',`<span style="color:var(--green)">✓</span> Updated <strong>${match.fund}</strong> (${shortInv(match.investor)}, ${fam.name}) — ${wmap.label} changed from <strong>${oldVal||'—'}</strong> to <strong style="color:var(--green)">${newVal}</strong>.`);
+    }catch(e){
+      if(cardEl){cardEl.classList.remove('saving');const ok=cardEl.querySelector('.hq-confirm-ok');if(ok){ok.disabled=false;ok.textContent='Retry';}const cn=cardEl.querySelector('.hq-confirm-cancel');if(cn)cn.disabled=false;}
       hqAppendMsg('error',`⚠ Save failed: ${e.message}`);
     }
     return;

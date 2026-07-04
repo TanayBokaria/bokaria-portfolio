@@ -1403,7 +1403,7 @@ async function callHqGemini(userInput){
       body: JSON.stringify({
         system_instruction:{parts:[{text:sysPrompt}]},
         contents: messages,
-        generationConfig:{temperature:0, maxOutputTokens:2000, responseMimeType:'application/json'}
+        generationConfig:{temperature:0, maxOutputTokens:4000, responseMimeType:'application/json'}
       })
     }
   );
@@ -1416,10 +1416,10 @@ async function callHqGemini(userInput){
   raw = raw.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');
   const brace = raw.indexOf('{');
   if(brace>0) raw = raw.slice(brace);
-  const result = JSON.parse(raw);
+  const result = safeParseJSON(raw);
 
   // Code-level safety: write + null investor → force clarification
-  const writeIntents = new Set(['update_value','add_asset','delete_holding']);
+  const writeIntents = new Set(['update_value','add_asset','delete_holding','fix_scheme_code','update_folio','update_purchase_date','update_invested','update_category']);
   if(writeIntents.has(result.intent) && !result.investor && !result.requires_clarification){
     result.requires_clarification = true;
     result.clarification_question = result.clarification_question || 'Which investor is this for?';
@@ -1438,16 +1438,38 @@ async function callHqGemini(userInput){
   return result;
 }
 
+function safeParseJSON(raw){
+  try{ return JSON.parse(raw); }
+  catch(e){
+    // Attempt recovery: truncated response — strip from last complete field
+    const lastComma = raw.lastIndexOf(',"');
+    if(lastComma>20){
+      try{
+        const partial = JSON.parse(raw.slice(0,lastComma)+'}');
+        partial.response_text = partial.response_text||'Response was cut short — please try again.';
+        partial.intent        = partial.intent||'query';
+        partial.is_read_only  = partial.is_read_only!==false;
+        partial.requires_clarification = partial.requires_clarification||false;
+        partial.table_data    = null; // truncated table is incomplete
+        return partial;
+      }catch(e2){}
+    }
+    throw new Error('AI returned malformed JSON — please try again. ('+e.message+')');
+  }
+}
+
 function renderTableData(td){
   if(!td||!td.headers||!td.rows||!td.rows.length) return '';
-  // Detect numeric/monetary cells for right-alignment and colour coding
   const isNum = v => /^[+\-]?[\d,]+(\.\d+)?\s*(Cr|L|%)?$/.test((v||'').trim()) || /^[+\-]?₹/.test((v||'').trim());
   const isPos = v => /^\+/.test((v||'').trim());
   const isNeg = v => /^[-−]/.test((v||'').trim()) && !/^--/.test((v||'').trim());
   const cellClass = v => isPos(v)?'pos':isNeg(v)?'neg':isNum(v)?'num':'';
-  const ths = td.headers.map(h=>`<th>${h}</th>`).join('');
-  const trs = td.rows.map(row=>`<tr>${row.map(c=>{const cls=cellClass(String(c||''));return `<td${cls?` class="${cls}"`:''}}>${c??''}</td>`;}).join('')}</tr>`).join('');
-  return `<div class="hq-ai-table-wrap"><table class="hq-ai-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
+  const ths = td.headers.map(h=>'<th>'+h+'</th>').join('');
+  const trs = td.rows.map(row=>{
+    const cells = row.map(c=>{const cls=cellClass(String(c||''));return '<td'+(cls?' class="'+cls+'"':'>') +(c??'')+'</td>';}).join('');
+    return '<tr>'+cells+'</tr>';
+  }).join('');
+  return '<div class="hq-ai-table-wrap"><table class="hq-ai-table"><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table></div>';
 }
 
 function hqAppendMsg(type, html){

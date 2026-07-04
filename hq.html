@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-04T10:09:36Z -->
+<!-- build: 2026-07-03T17:05:09Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -826,17 +826,31 @@ async function loadFamilyData(family){
     const data = await r.json();
     const rows = (data.values||[]).slice(1); // skip header
 
-    // portfolio_snapshot columns (written by writePortfolioSnapshot):
-    // [0]timestamp [1]investor [2]originalName [3]currentName [4]type [5]category
-    // [6]folio [7]invested [8]currentValue [9]gain [10]gainPct [11]cagr [12]nav [13]navDate
+    // portfolio_snapshot columns (A:T, 20 cols — written by writePortfolioSnapshot):
+    // [0]AsOf [1]Investor [2]OrigName [3]CurrName [4]Type [5]Category
+    // [6]Folio [7]Invested [8]CurrentValue [9]Gain [10]GainPct [11]CAGR [12]NAV [13]NAVDate
+    // [14]PurchaseDate [15]HoldingPeriod [16]SchemeCode [17]Currency [18]USDValue [19]Units/Qty
     const holdings = rows.map(row=>({
-      fund:     row[2]||row[3]||'',
-      investor: row[1]||'',
-      type:     row[4]||'MF',
-      folio:    row[6]||'',
-      invested: parseFloat(row[7])||0,
-      value:    parseFloat(row[8])||0,
-      asOfDate: row[13]||row[0]||'',
+      fund:         row[2]||row[3]||'',
+      originalName: row[2]||'',
+      currentName:  row[3]||'',
+      investor:     row[1]||'',
+      type:         row[4]||'MF',
+      category:     row[5]||'',
+      folio:        String(row[6]||''),
+      invested:     parseFloat(row[7])||0,
+      value:        parseFloat(row[8])||0,
+      gain:         parseFloat(row[9])||0,
+      gainPct:      parseFloat(row[10])||0,
+      cagr:         parseFloat(row[11])||0,
+      nav:          parseFloat(row[12])||0,
+      navDate:      row[13]||'',
+      purchaseDate: row[14]||'',
+      schemeCode:   String(row[16]||''),
+      currency:     row[17]||'INR',
+      usdValue:     parseFloat(row[18])||0,
+      units:        parseFloat(row[19])||0,
+      asOfDate:     row[13]||row[0]||'',
     })).filter(h=>h.fund&&h.investor);
 
     const totalValue    = holdings.reduce((s,h)=>s+(h.value||0), 0);
@@ -1214,48 +1228,95 @@ function clearHqRouting(){
 // ══════════════════════════════════════════════════════════════════════════════
 
 function buildHqSystemPrompt(){
-  // Build rich holding summaries including explicit AB equity breakdown
+  // Full compact context — every holding per family, all types, all fields
+  const _today = new Date();
+
   const familyCtx = FAMILIES.filter(f=>!f.comingSoon).map(f=>{
     const d = _familyData[f.name];
     if(!d||!d.holdings.length) return `${f.name} family (${f.investors.join(', ')}): no data loaded yet`;
 
-    // Split by type for accurate AI context — AB equity is ALWAYS at end of holdings array
     const mfH   = d.holdings.filter(h=>h.type==='MF');
     const pmsH  = d.holdings.filter(h=>h.type==='PMS'||h.type==='AIF');
     const nyseH = d.holdings.filter(h=>h.type==='NYSE');
     const abH   = d.holdings.filter(h=>h.type==='AB Equity');
 
-    const abTotal     = abH.reduce((s,h)=>s+(h.value||0),0);
-    const abInvestors = [...new Set(abH.map(h=>h.investor))];
+    const mfTotal   = mfH.reduce((s,h)=>s+(h.value||0),0);
+    const pmsTotal  = pmsH.reduce((s,h)=>s+(h.value||0),0);
+    const nyseTotal = nyseH.reduce((s,h)=>s+(h.value||0),0);
+    const abTotal   = abH.reduce((s,h)=>s+(h.value||0),0);
 
-    // Sample from MF holdings for fund-level queries
-    const mfSample = mfH.slice(0,20).map(h=>`${h.investor}|${h.fund}|₹${(h.value/1e5).toFixed(0)}L`);
+    let ctx = `\n${'═'.repeat(6)} ${f.name.toUpperCase()} FAMILY — ${d.holdings.length} holdings, ₹${(d.totalValue/1e7).toFixed(2)}Cr total ${'═'.repeat(6)}`;
+    ctx += `\nInvestors: ${f.investors.join(', ')}`;
+    ctx += `\nBreakdown: MF ₹${(mfTotal/1e7).toFixed(2)}Cr | PMS/AIF ₹${(pmsTotal/1e7).toFixed(2)}Cr | NYSE ₹${(nyseTotal/1e7).toFixed(2)}Cr | AB Equity ₹${(abTotal/1e7).toFixed(2)}Cr`;
 
-    let ctx = `${f.name} family (${f.investors.join(', ')}): ${d.holdings.length} holdings, total ₹${(d.totalValue/1e7).toFixed(1)}Cr`;
-    if(mfH.length)   ctx += `\n  Mutual Funds: ${mfH.length} holdings (sample: ${mfSample.join('; ')})`;
-    if(pmsH.length)  ctx += `\n  PMS/AIF: ${pmsH.length} holdings`;
-    if(nyseH.length) ctx += `\n  NYSE/US stocks: ${nyseH.length} holdings`;
-    if(abH.length)   ctx += `\n  AB Equity (Aditya Birla direct stocks via AB brokerage — type="AB Equity"): ${abH.length} positions, ₹${(abTotal/1e7).toFixed(2)}Cr, held by: ${abInvestors.join(', ')}`;
-    else             ctx += `\n  AB Equity: none on record`;
+    // ── Mutual Funds — full list, pipe-delimited
+    if(mfH.length){
+      ctx += `\n\nMUTUAL FUNDS (${mfH.length} holdings)`;
+      ctx += `\nInvestor|Fund|Folio|SchemeCode|Category|Invested₹|CurrentValue₹|Units|NAVDate|PurchaseDate|Return%|CAGR%`;
+      mfH.forEach(h=>{
+        const ret = h.invested>0 ? ((h.value-h.invested)/h.invested*100).toFixed(1) : '—';
+        const cagr = h.cagr ? h.cagr.toFixed(1) : '—';
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.schemeCode||'—'}|${h.category||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.units>0?h.units.toFixed(3):'—'}|${h.navDate||'—'}|${h.purchaseDate||'—'}|${ret}|${cagr}`;
+      });
+    }
+
+    // ── PMS/AIF — with staleness
+    if(pmsH.length){
+      ctx += `\n\nPMS/AIF HOLDINGS (${pmsH.length})`;
+      ctx += `\nInvestor|Fund|Folio|Type|Category|Invested₹|CurrentValue₹|SOADate|StalenessDays`;
+      pmsH.forEach(h=>{
+        let staleness = 'NO DATE ⚠️';
+        if(h.navDate){
+          const days = Math.floor((_today - new Date(h.navDate))/86400000);
+          staleness = days > 90 ? `${days}d ⚠️STALE` : `${days}d`;
+        }
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${h.type}|${h.category||h.type}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.navDate||'—'}|${staleness}`;
+      });
+    }
+
+    // ── NYSE — with USD values
+    if(nyseH.length){
+      ctx += `\n\nNYSE / US STOCKS (${nyseH.length})`;
+      ctx += `\nInvestor|Ticker/Fund|Folio|Invested₹|CurrentValue₹|USDValue|Currency|NAVDate`;
+      nyseH.forEach(h=>{
+        ctx += `\n${h.investor}|${h.fund}|${h.folio||'—'}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.usdValue>0?h.usdValue.toFixed(0):'—'}|${h.currency||'USD'}|${h.navDate||'—'}`;
+      });
+    }
+
+    // ── AB Equity — every position
+    if(abH.length){
+      const abInvestors = [...new Set(abH.map(h=>h.investor))];
+      ctx += `\n\nAB EQUITY — ADITYA BIRLA DIRECT STOCKS (${abH.length} positions, ₹${(abTotal/1e7).toFixed(2)}Cr)`;
+      ctx += `\nNOTE: Individual NSE/BSE stocks via AB brokerage — NOT Aditya Birla Sun Life MFs`;
+      ctx += `\nHeld by: ${abInvestors.join(', ')}`;
+      ctx += `\nInvestor|Stock|Invested₹|CurrentValue₹|Qty|LTP|AsOfDate`;
+      abH.forEach(h=>{
+        ctx += `\n${h.investor}|${h.fund}|${Math.round(h.invested)}|${Math.round(h.value)}|${h.units>0?h.units:'—'}|${h.nav>0?h.nav.toFixed(2):'—'}|${h.navDate||'—'}`;
+      });
+    } else {
+      ctx += `\n\nAB EQUITY: none on record`;
+    }
+
     return ctx;
   }).join('\n\n');
 
   return `You are the AI assistant for the Bokaria Family Investment HQ dashboard.
-You help Priya manage investments across ALL family portfolios from one place.
+You help Priya (the family accounts manager) manage investments across ALL four family portfolios.
 
-PORTFOLIO CONTEXT — Holdings are split into 4 types:
-- MF: Mutual fund holdings (scheme codes, NAVs auto-refreshed)
-- PMS/AIF: Portfolio Management Service and Alternative Investment Fund holdings
-- NYSE: US-listed equity holdings in USD
-- AB Equity (also called "AB holdings" or "Aditya Birla holdings"): Direct equity stocks held via the Aditya Birla brokerage platform. These are individual NSE/BSE listed stocks, NOT Aditya Birla Sun Life mutual funds.
-
-FAMILY PORTFOLIOS:
+COMPLETE PORTFOLIO DATA — all holdings, all families:
+Data format: pipe-delimited rows with a header line per section.
 ${familyCtx}
 
 INVESTORS BY FAMILY:
 ${FAMILIES.map(f=>`- ${f.name}: ${f.investors.join(', ')}`).join('\n')}
 
-CURRENT ROUTING CONTEXT: ${_routedFamily ? `Priya is working on the ${_routedFamily} family` : 'No family selected yet'}
+CURRENT ROUTING CONTEXT: ${_routedFamily ? `Priya is currently working on the ${_routedFamily} family` : 'No family selected yet'}
+
+KEY NOTES:
+- AB Equity = individual NSE/BSE stocks via Aditya Birla brokerage (NOT Aditya Birla Sun Life MFs)
+- PMS/AIF staleness = days since last SOA; ⚠️STALE means >90 days out of date
+- For specific NAV fetch errors, open the individual family dashboard (Data Freshness panel)
+- Indian amounts: 1L=₹1,00,000; 1Cr=₹1,00,00,000
 
 RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
 {
@@ -1276,7 +1337,7 @@ RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
 
 RULES:
 1. ALWAYS identify the family first. Each investor name uniquely maps to one family.
-2. If the family cannot be determined, ask: "Which family — Prashant, Piyush, or Prabin?"
+2. If the family cannot be determined, ask: "Which family — Prashant, Piyush, Prabin, or Umed Singh?"
 3. For write actions: requires explicit confirmation before anything is saved.
 4. If investor not named in the message → requires_clarification=true (confirm investor).
 5. NEVER invent fund names or investors not in the portfolio data above.

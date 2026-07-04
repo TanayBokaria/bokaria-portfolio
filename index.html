@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-04T04:02:59Z -->
+<!-- build: 2026-07-04T04:15:51Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1404,16 +1404,16 @@ function fetchWithTimeout(url, options={}, ms=12000){
 }
 
 async function fetchSingleNAV(code){
-  // ── Primary: mfapi.in ──
+  // ── Primary: mfapi.in — 3 attempts with backoff ──
   const RETRYABLE=new Set([429,502,503,504]);
-  for(let attempt=0;attempt<2;attempt++){
+  for(let attempt=0;attempt<3;attempt++){
    try{
-    const r=await fetchWithTimeout(`https://api.mfapi.in/mf/${code}/latest`,{},6000);
+    const r=await fetchWithTimeout(`https://api.mfapi.in/mf/${code}/latest`,{},10000);
     if(RETRYABLE.has(r.status)){
-      if(attempt===0) await new Promise(x=>setTimeout(x,1500));
-      continue; // retry once
+      await new Promise(x=>setTimeout(x,1500*(attempt+1)));
+      continue;
     }
-    if(!r.ok) break; // non-retryable error → try fallback
+    if(!r.ok) break; // 404 or non-retryable → try fallbacks
     const d=await r.json();
     if(!d.data?.length) break;
     const result={nav:parseFloat(d.data[0].nav),date:d.data[0].date,schemeName:d.meta?.scheme_name||''};
@@ -1429,26 +1429,38 @@ async function fetchSingleNAV(code){
         }
       });
     }
-    return result; // success from mfapi.in
+    return result;
   }catch(e){
-    break; // timeout/network error → go straight to fallback
+    if(attempt<2) await new Promise(x=>setTimeout(x,1200*(attempt+1)));
   }
   } // end retry loop
 
-  // ── Fallback: mfdata.in (different infrastructure, same AMFI scheme codes) ──
+  // ── Fallback 1: mfdata.in ──
   if(!mfdataApiDown){
     try{
-      const r2=await fetchWithTimeout(`https://mfdata.in/api/v1/schemes/${code}`,{},3000);
+      const r2=await fetchWithTimeout(`https://mfdata.in/api/v1/schemes/${code}`,{},7000);
       if(r2.ok){
         const d2=await r2.json();
         if(d2.status==='success'&&d2.data?.nav!=null){
           return {nav:parseFloat(d2.data.nav),date:d2.data.nav_date||'',schemeName:d2.data.name||'',source:'mfdata.in'};
         }
       }
-    }catch(e){ mfdataApiDown=true; } // timed out — skip for rest of session
+    }catch(e){ mfdataApiDown=true; }
   }
 
-  return null; // both sources failed
+  // ── Fallback 2: mfapi.in alternate endpoint ──
+  try{
+    const r3=await fetchWithTimeout(`https://api.mfapi.in/mf/${code}`,{},10000);
+    if(r3.ok){
+      const d3=await r3.json();
+      const latest=d3.data?.[0];
+      if(latest?.nav){
+        return {nav:parseFloat(latest.nav),date:latest.date||'',schemeName:d3.meta?.scheme_name||'',source:'mfapi-alt'};
+      }
+    }
+  }catch(e){}
+
+  return null;
 }
 async function refreshNAVs(){
   const btn=document.getElementById('refreshBtn'),icon=document.getElementById('refreshIcon');

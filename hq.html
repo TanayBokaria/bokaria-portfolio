@@ -1424,7 +1424,7 @@ async function callHqGemini(userInput){
   const messages = [..._aiThread, {role:'user', parts:[{text:userInput}]}];
 
   const res = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
     {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -1494,7 +1494,7 @@ function renderTableData(td){
   const cellClass = v => isPos(v)?'pos':isNeg(v)?'neg':isNum(v)?'num':'';
   const ths = td.headers.map(h=>'<th>'+h+'</th>').join('');
   const trs = td.rows.map(row=>{
-    const cells = row.map(c=>{const cls=cellClass(String(c||''));return '<td'+(cls?' class="'+cls+'"':'>') +(c??'')+'</td>';}).join('');
+    const cells = row.map(c=>{const cls=cellClass(String(c||''));return '<td'+(cls?' class="'+cls+'"':'')+'>'+String(c??'')+'</td>';}).join('');
     return '<tr>'+cells+'</tr>';
   }).join('');
   return '<div class="hq-ai-table-wrap"><table class="hq-ai-table"><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table></div>';
@@ -1877,7 +1877,7 @@ Extract ALL holdings. Return ONLY valid JSON (no markdown):
   }
 
   const res = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       system_instruction:{parts:[{text:sysPrompt}]},
       contents:[{role:'user',parts}],
@@ -1901,8 +1901,8 @@ function renderHqDiff(extraction, fileName){
   }
 
   // Detect duplicates vs updates vs new
-  const famData = fam ? _familyData[fam.name] : null;
   const diff = {duplicate:[], update:[], newItems:[]};
+  const matchedExistingIds = new Set();
   holdings.forEach(item=>{
     const inv = item.investor||'';
     const detectedFam = INVESTOR_TO_FAMILY[inv.toLowerCase()];
@@ -1915,9 +1915,36 @@ function renderHqDiff(extraction, fileName){
       return fn.includes(it.slice(0,15))||it.includes(fn.slice(0,15));
     });
     if(!match){ diff.newItems.push({...item,_detectedFamily:detectedFam}); return; }
+    matchedExistingIds.add(match.id);
     const diff_pct = match.value>0 ? Math.abs(match.value-(item.current_value||0))/match.value : 1;
     if(diff_pct<0.005) diff.duplicate.push({...item,_existing:match,_detectedFamily:detectedFam});
     else diff.update.push({...item,_existing:match,_proposedValue:item.current_value,_detectedFamily:detectedFam});
+  });
+
+  // ── Reconciliation: detect existing holdings NOT covered by this statement ──
+  // Build a set of "fund name keywords" from what the statement contains
+  const stmtKeywords = new Set();
+  holdings.forEach(item=>{
+    const words = (item.fund_name||'').toLowerCase().split(/[\s\-_()/]+/).filter(w=>w.length>4);
+    words.forEach(w=>stmtKeywords.add(w));
+    // Also add first 8 chars of fund name as a stem
+    const stem = (item.fund_name||'').toLowerCase().slice(0,8).trim();
+    if(stem.length>=5) stmtKeywords.add(stem);
+  });
+  // Find families touched by this statement
+  const touchedFamilies = new Set(holdings.map(item=>INVESTOR_TO_FAMILY[(item.investor||'').toLowerCase()]).filter(Boolean));
+  const orphaned = []; // existing holdings that share keywords but weren't in the statement
+  touchedFamilies.forEach(famName=>{
+    const fd = _familyData[famName];
+    if(!fd?.holdings) return;
+    fd.holdings.forEach(h=>{
+      if(matchedExistingIds.has(h.id)) return; // already matched
+      const hName = (h.fund||'').toLowerCase();
+      const hasOverlap = [...stmtKeywords].some(kw=>hName.includes(kw));
+      if(hasOverlap && !orphaned.find(o=>o._existingH===h)){
+        orphaned.push({_existingH:h, _family:famName});
+      }
+    });
   });
 
   const total = diff.duplicate.length+diff.update.length+diff.newItems.length;
@@ -1930,13 +1957,13 @@ function renderHqDiff(extraction, fileName){
       ${extraction.notes?`<span style="font-size:10px;color:var(--text-dim);font-style:italic">${extraction.notes}</span>`:''}
     </div>
     ${diff.duplicate.length?`
-    <div class="hq-diff-section-title dup">✓ Already in dashboard (${diff.duplicate.length}) — same value</div>
+    <div class="hq-diff-section-title dup">✓ Already in dashboard (${diff.duplicate.length}) — same value${diff.duplicate[0]?.as_of_date?' · SOA date will be updated':''}</div>
     ${diff.duplicate.map((item,i)=>`
       <div class="hq-diff-row" data-type="dup" data-idx="${i}">
         <input type="checkbox" id="hd_dup_${i}" checked>
         <div class="hq-diff-body">
           <div class="hq-diff-fund">${item.fund_name}</div>
-          <div class="hq-diff-meta">${shortInv(item.investor)} · ${item._detectedFamily||''}</div>
+          <div class="hq-diff-meta">${shortInv(item.investor)} · ${item._detectedFamily||''}${item.as_of_date?' · as of '+item.as_of_date:''}</div>
           <div class="hq-diff-val" style="color:var(--text-dim)">${fmtCr(item.current_value)}</div>
         </div>
       </div>`).join('')}`:''}
@@ -1947,7 +1974,7 @@ function renderHqDiff(extraction, fileName){
         <input type="checkbox" id="hd_upd_${i}" checked>
         <div class="hq-diff-body">
           <div class="hq-diff-fund">${item._existing.fund}</div>
-          <div class="hq-diff-meta">${shortInv(item.investor)} · ${item._detectedFamily||''}</div>
+          <div class="hq-diff-meta">${shortInv(item.investor)} · ${item._detectedFamily||''}${item.as_of_date?' · as of '+item.as_of_date:''}</div>
           <div class="hq-diff-val">
             <span style="text-decoration:line-through;color:var(--text-dim)">${fmtCr(item._existing.value)}</span>
             <span style="color:var(--text-dim);margin:0 4px">→</span>
@@ -1966,8 +1993,20 @@ function renderHqDiff(extraction, fileName){
           <div class="hq-diff-val" style="color:var(--green)">${fmtCr(item.current_value)}</div>
         </div>
       </div>`).join('')}`:''}
+    ${orphaned.length?`
+    <div class="hq-diff-section-title" style="background:rgba(239,107,107,0.12);color:var(--red)">⚠ Not in statement — ${orphaned.length} existing holding${orphaned.length>1?'s':''} from this manager</div>
+    <div style="font-size:11px;color:var(--text-muted);padding:6px 12px 2px">These positions are in your dashboard but absent from the uploaded statement. Were they redeemed, or are they covered by a separate statement?</div>
+    ${orphaned.map((o,i)=>`
+      <div class="hq-diff-row" style="opacity:0.75" data-type="orphan" data-idx="${i}">
+        <div style="width:16px;flex-shrink:0"></div>
+        <div class="hq-diff-body">
+          <div class="hq-diff-fund" style="color:var(--red)">${o._existingH.fund}</div>
+          <div class="hq-diff-meta">${shortInv(o._existingH.investor||'')} · ${o._family}${o._existingH.navDate||o._existingH.soaDate?' · last: '+(o._existingH.soaDate||o._existingH.navDate):''}</div>
+          <div class="hq-diff-val" style="color:var(--text-dim)">${fmtCr(o._existingH.value)}</div>
+        </div>
+      </div>`).join('')}`:''}
     <div class="hq-diff-apply-row">
-      <span id="hdStatus" style="font-size:11px;color:var(--text-muted)">Uncheck rows to skip, then Apply.</span>
+      <span id="hdStatus" style="font-size:11px;color:var(--text-muted)">Uncheck rows to skip, then Apply.${orphaned.length?' Orphaned holdings are informational — open the family dashboard to remove them if redeemed.':''}</span>
       <div style="display:flex;gap:8px">
         <button class="hq-diff-cancel" onclick="this.closest('.hq-diff-card').remove();hqAppendMsg('ai','Cancelled — no changes made.')">Cancel</button>
         <button class="hq-diff-apply" onclick="applyHqDiff(this.closest('.hq-diff-card'))">Apply Selected</button>
@@ -2061,6 +2100,25 @@ async function applyHqDiff(cardEl){
     done++; setProgress(done < totalItems ? `Saved ${done}/${totalItems}…` : 'Finishing…');
   }
 
+  // Update soaDate (col N) for duplicates that have an as_of_date in the statement
+  for(const [i,item] of diff.duplicate.entries()){
+    const chk=cardEl.querySelector(`#hd_dup_${i}`); if(!chk?.checked){skipped++;continue;}
+    if(!item.as_of_date||!item._existing) continue; // no date to update
+    const famName=item._detectedFamily; const famCfg=getFamilyConfig(famName);
+    if(!famCfg) continue;
+    const fd=_familyData[famCfg.name];
+    if(!fd) continue;
+    const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2;
+    if(rowIdx<2) continue;
+    // Write col N (index 14, 1-based) = soaDate
+    try{
+      await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${famCfg.sheetId}/values/portfolio_snapshot!N${rowIdx}?valueInputOption=USER_ENTERED`,
+        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+         body:JSON.stringify({values:[[item.as_of_date]]})});
+      item._existing.navDate=item.as_of_date; // update local cache
+    }catch(e){ /* non-critical, ignore */ }
+  }
   skipped += diff.duplicate.filter((_,i)=>!cardEl.querySelector(`#hd_dup_${i}`)?.checked).length;
   if(applied>0){renderAllFamilyCards();renderActionQueue();updateTotalBar();}
 

@@ -276,6 +276,24 @@ input{font-family:var(--font);}
 }
 .hq-opt:hover{border-color:var(--accent);color:var(--accent);}
 
+/* AI response table */
+.hq-ai-table{width:100%;border-collapse:collapse;margin:8px 0 4px;font-size:11px;}
+.hq-ai-table th{
+  background:var(--surface);border-bottom:1px solid var(--accent);
+  padding:5px 9px;text-align:left;font-weight:700;color:var(--accent);
+  font-size:10px;text-transform:uppercase;letter-spacing:0.5px;
+}
+.hq-ai-table td{
+  padding:5px 9px;border-bottom:1px solid var(--border);color:var(--text);
+  white-space:nowrap;
+}
+.hq-ai-table tr:last-child td{border-bottom:none;}
+.hq-ai-table tbody tr:hover td{background:var(--surface);transition:background 0.1s;}
+.hq-ai-table td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--accent);}
+.hq-ai-table td.pos{color:#4ade80;font-weight:600;}
+.hq-ai-table td.neg{color:var(--red);font-weight:600;}
+.hq-ai-table-wrap{overflow-x:auto;margin:4px 0;}
+
 /* Thinking */
 .hq-thinking{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);}
 .hq-dots span{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--text-dim);animation:dot 1.2s infinite;margin:0 1px;}
@@ -1332,8 +1350,20 @@ RESPONSE SCHEMA (return ONLY raw JSON, no markdown):
   "options": array_or_null,
   "action_preview": string_or_null,
   "response_text": string,
-  "is_read_only": boolean
+  "is_read_only": boolean,
+  "table_data": { "headers": string[], "rows": string[][] } | null
 }
+
+TABLE_DATA RULES — use table_data whenever the answer is a list or comparison:
+- Holdings breakdown by investor/family → table with columns like Family | Investor | Holdings | Current Value | Invested | Return%
+- AB equity by member → Investor | Positions | Current Value | Invested
+- Fund list queries → Fund | Investor | Folio | Current Value | NAV Date
+- Asset class totals → Asset Class | Value | % of Portfolio
+- Any ≥3 data points that naturally form rows → use table_data
+- Prefix monetary values with ₹ and use Cr/L units for readability (e.g. ₹19.92 Cr, ₹4.5 L)
+- Mark return/gain columns positive with a + prefix when positive (e.g. +42.3%)
+- Keep response_text to 1 brief sentence when table_data is present (the table carries the detail)
+- Set table_data: null for simple one-liner answers
 
 RULES:
 1. ALWAYS identify the family first. Each investor name uniquely maps to one family.
@@ -1396,6 +1426,18 @@ async function callHqGemini(userInput){
   return result;
 }
 
+function renderTableData(td){
+  if(!td||!td.headers||!td.rows||!td.rows.length) return '';
+  // Detect numeric/monetary cells for right-alignment and colour coding
+  const isNum = v => /^[+\-]?[\d,]+(\.\d+)?\s*(Cr|L|%)?$/.test((v||'').trim()) || /^[+\-]?₹/.test((v||'').trim());
+  const isPos = v => /^\+/.test((v||'').trim());
+  const isNeg = v => /^[-−]/.test((v||'').trim()) && !/^--/.test((v||'').trim());
+  const cellClass = v => isPos(v)?'pos':isNeg(v)?'neg':isNum(v)?'num':'';
+  const ths = td.headers.map(h=>`<th>${h}</th>`).join('');
+  const trs = td.rows.map(row=>`<tr>${row.map(c=>{const cls=cellClass(String(c||''));return `<td${cls?` class="${cls}"`:''}}>${c??''}</td>`;}).join('')}</tr>`).join('');
+  return `<div class="hq-ai-table-wrap"><table class="hq-ai-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
+}
+
 function hqAppendMsg(type, html){
   const thread = document.getElementById('hqThread');
   if(!thread) return;
@@ -1436,7 +1478,9 @@ function renderHqResponse(result, userInput){
   }
 
   if(result.is_read_only){
-    hqAppendMsg('ai', result.response_text||'Done.');
+    const tableHtml = renderTableData(result.table_data);
+    const txt = result.response_text||'Done.';
+    hqAppendMsg('ai', tableHtml ? `${txt}<br>${tableHtml}` : txt);
     return;
   }
 

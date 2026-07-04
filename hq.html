@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build: 2026-07-04T03:34:47Z -->
+<!-- build: 2026-07-04T10:09:36Z -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1214,16 +1214,40 @@ function clearHqRouting(){
 // ══════════════════════════════════════════════════════════════════════════════
 
 function buildHqSystemPrompt(){
-  // Build compact holding summaries from loaded data
+  // Build rich holding summaries including explicit AB equity breakdown
   const familyCtx = FAMILIES.filter(f=>!f.comingSoon).map(f=>{
     const d = _familyData[f.name];
     if(!d||!d.holdings.length) return `${f.name} family (${f.investors.join(', ')}): no data loaded yet`;
-    const sample = d.holdings.slice(0,30).map(h=>`${h.investor}|${h.fund}|₹${(h.value/1e5).toFixed(0)}L`);
-    return `${f.name} family (${f.investors.join(', ')}): ${d.holdings.length} holdings, total ₹${(d.totalValue/1e7).toFixed(1)}Cr\nSample: ${sample.join('; ')}`;
+
+    // Split by type for accurate AI context — AB equity is ALWAYS at end of holdings array
+    const mfH   = d.holdings.filter(h=>h.type==='MF');
+    const pmsH  = d.holdings.filter(h=>h.type==='PMS'||h.type==='AIF');
+    const nyseH = d.holdings.filter(h=>h.type==='NYSE');
+    const abH   = d.holdings.filter(h=>h.type==='AB Equity');
+
+    const abTotal     = abH.reduce((s,h)=>s+(h.value||0),0);
+    const abInvestors = [...new Set(abH.map(h=>h.investor))];
+
+    // Sample from MF holdings for fund-level queries
+    const mfSample = mfH.slice(0,20).map(h=>`${h.investor}|${h.fund}|₹${(h.value/1e5).toFixed(0)}L`);
+
+    let ctx = `${f.name} family (${f.investors.join(', ')}): ${d.holdings.length} holdings, total ₹${(d.totalValue/1e7).toFixed(1)}Cr`;
+    if(mfH.length)   ctx += `\n  Mutual Funds: ${mfH.length} holdings (sample: ${mfSample.join('; ')})`;
+    if(pmsH.length)  ctx += `\n  PMS/AIF: ${pmsH.length} holdings`;
+    if(nyseH.length) ctx += `\n  NYSE/US stocks: ${nyseH.length} holdings`;
+    if(abH.length)   ctx += `\n  AB Equity (Aditya Birla direct stocks via AB brokerage — type="AB Equity"): ${abH.length} positions, ₹${(abTotal/1e7).toFixed(2)}Cr, held by: ${abInvestors.join(', ')}`;
+    else             ctx += `\n  AB Equity: none on record`;
+    return ctx;
   }).join('\n\n');
 
   return `You are the AI assistant for the Bokaria Family Investment HQ dashboard.
 You help Priya manage investments across ALL family portfolios from one place.
+
+PORTFOLIO CONTEXT — Holdings are split into 4 types:
+- MF: Mutual fund holdings (scheme codes, NAVs auto-refreshed)
+- PMS/AIF: Portfolio Management Service and Alternative Investment Fund holdings
+- NYSE: US-listed equity holdings in USD
+- AB Equity (also called "AB holdings" or "Aditya Birla holdings"): Direct equity stocks held via the Aditya Birla brokerage platform. These are individual NSE/BSE listed stocks, NOT Aditya Birla Sun Life mutual funds.
 
 FAMILY PORTFOLIOS:
 ${familyCtx}

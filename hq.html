@@ -2473,6 +2473,39 @@ function renderHqDiff(extraction, fileName){
 
 function hqSendOpt(i){ hqSend((window._hqOptions||[])[i]||''); }
 
+// Feature B: Write soaDate (and currentValue) to family pms_aif_values tab
+// Called after HQ Apply confirms PMS/AIF holdings — makes individual dashboards
+// pick up the HQ-applied date immediately on next loadFromSheets without needing
+// the snapshot restore workaround.
+async function hqWritePmsAifSoaDates(pmsUpdates, token){
+  if(!pmsUpdates.length || !token) return;
+  // Group by sheetId for efficient reads (one read per family sheet)
+  const bySheet = {};
+  for(const {sheetId, holdingId, value, soaDate} of pmsUpdates){
+    if(!sheetId||!holdingId||!soaDate) continue;
+    (bySheet[sheetId]||(bySheet[sheetId]=[])).push({holdingId,value,soaDate});
+  }
+  for(const [sheetId, items] of Object.entries(bySheet)){
+    try{
+      const rr=await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!A2:A500`,
+        {headers:{Authorization:`Bearer ${token}`}},8000);
+      if(!rr.ok) continue;
+      const rows=((await rr.json()).values)||[];
+      for(const {holdingId,value,soaDate} of items){
+        const ri=rows.findIndex(r=>parseInt(r[0])===holdingId);
+        if(ri<0) continue;
+        const sr=ri+2; // header offset + 1-based
+        // Write E:F = [currentValue, soaDate] — non-critical, ignore failures
+        await fetchWithTimeout(
+          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!E${sr}:F${sr}?valueInputOption=USER_ENTERED`,
+          {method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+           body:JSON.stringify({values:[[String(value),soaDate]]})},6000).catch(()=>{});
+      }
+    }catch(e){/* non-critical — individual dashboards will still get date via snapshot restore */}
+  }
+}
+
 async function applyHqDiff(cardEl){
   const diffKey = cardEl.dataset.diffKey;
   const diff = (window._hqDiffs && diffKey) ? window._hqDiffs[diffKey] : null;
@@ -2529,6 +2562,30 @@ async function applyHqDiff(cardEl){
       item._existing.value=item._proposedValue; applied++;
     }catch(e){errors.push(`${item._existing?.fund||item.fund_name}: ${e.message}`);failed++;}
     done++; setProgress(done < totalItems ? `Saved ${done}/${totalItems}…` : 'Finishing…');
+  }
+
+  // Feature B: Also write soaDate + value to pms_aif_values for PMS/AIF updates
+  // so individual dashboards pick it up on next loadFromSheets without workaround
+  const _pmsAifUpdates = diff.update
+    .filter((item,i)=>{
+      const chk=cardEl.querySelector(`#hd_upd_${i}`);
+      return chk?.checked && item.as_of_date && (item._existing?.type==='PMS'||item._existing?.type==='AIF');
+    })
+    .map(item=>{
+      const fam=getFamilyConfig(item._detectedFamily);
+      return {sheetId:fam?.sheetId, holdingId:item._existing?.id, value:item._proposedValue, soaDate:item.as_of_date};
+    });
+  const _pmsAifDups = diff.duplicate
+    .filter((item,i)=>{
+      const chk=cardEl.querySelector(`#hd_dup_${i}`);
+      return chk?.checked && item.as_of_date && (item._existing?.type==='PMS'||item._existing?.type==='AIF');
+    })
+    .map(item=>{
+      const fam=getFamilyConfig(item._detectedFamily);
+      return {sheetId:fam?.sheetId, holdingId:item._existing?.id, value:item._existing?.value||item.current_value, soaDate:item.as_of_date};
+    });
+  if(_pmsAifUpdates.length||_pmsAifDups.length){
+    hqWritePmsAifSoaDates([..._pmsAifUpdates,..._pmsAifDups], _token).catch(()=>{});
   }
 
   for(const [i,item] of diff.newItems.entries()){

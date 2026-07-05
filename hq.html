@@ -934,7 +934,7 @@ async function loadFamilyData(family){
       currency:     row[17]||'INR',
       usdValue:     parseFloat(row[18])||0,
       units:        parseFloat(row[19])||0,
-      asOfDate:     row[13]||row[0]||'',
+      asOfDate:     row[13]||'', // col N only (navDate/soaDate) — do NOT fall back to row[0] (snapshot timestamp)
     })).filter(h=>h.fund&&h.investor);
 
     // Staleness alerts
@@ -942,8 +942,10 @@ async function loadFamilyData(family){
     holdings.forEach(h=>{
       if(h.value === 0 && h.invested > 0){
         alerts.push({priority:'high', fund:h.fund, investor:h.investor, msg:'Current value is ₹0 — may need updating'});
-      } else if((h.type==='PMS'||h.type==='AIF') && (!h.asOfDate||h.asOfDate==='—')){
-        alerts.push({priority:'medium', fund:h.fund, investor:h.investor, msg:'No value date on record'});
+      } else if((h.type==='PMS'||h.type==='AIF') && (!h.navDate||h.navDate==='—')){
+        // Use navDate (col N) specifically — asOfDate can fall back to the snapshot write timestamp
+        // which is not a meaningful SOA date
+        alerts.push({priority:'medium', fund:h.fund, investor:h.investor, msg:'No SOA date on record'});
       }
     });
 
@@ -1300,10 +1302,21 @@ function runStalenessAudit(){
       const dateRaw = h.navDate||h.asOfDate||'';
       let lastUpdate = null;
       if(dateRaw && typeof dateRaw==='string'){
-        if(dateRaw.match(/^\d{4}-\d{2}-\d{2}$/)) lastUpdate=new Date(dateRaw);
-        else if(dateRaw.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/)){
+        if(dateRaw.match(/^\d{4}-\d{2}-\d{2}$/)){
+          lastUpdate=new Date(dateRaw); // YYYY-MM-DD
+        } else if(dateRaw.match(/^\d{1,2}-[A-Za-z]{3}-\d{4}$/)){
+          lastUpdate=new Date(dateRaw); // DD-MMM-YYYY — browser parses ok with hyphens
+          if(isNaN(lastUpdate)){
+            // Fallback: manual parse "31-May-2026"
+            const mp=/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(dateRaw);
+            if(mp) lastUpdate=new Date(`${mp[3]}-${mp[2]}-${mp[1].padStart(2,'0')}`);
+          }
+        } else if(dateRaw.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/)){
           const p=dateRaw.split(/[\/\-]/);
-          lastUpdate=new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`);
+          lastUpdate=new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`); // DD/MM/YYYY
+        } else if(dateRaw.match(/^\d{2}-\d{2}-\d{4}$/)){
+          const p=dateRaw.split('-');
+          lastUpdate=new Date(`${p[2]}-${p[1]}-${p[0]}`); // DD-MM-YYYY
         }
       }
 
@@ -1806,8 +1819,15 @@ async function callHqGemini(userInput){
     }
   );
   if(!res.ok){
-    if(res.status===429) _geminiIdx++;
-    throw new Error(`Gemini error ${res.status}${res.status===429?' — rate limit, try again in a moment':''}`);
+    if(res.status===429){
+      _geminiIdx++;
+      // If all keys exhausted (cycled back), wait 30s before surfacing the error
+      const keysLen = keys.length||1;
+      if(_geminiIdx % keysLen === 0){
+        await new Promise(r=>setTimeout(r, 30000));
+      }
+    }
+    throw new Error(`Gemini error ${res.status}${res.status===429?' — rate limited, retrying with next key or waiting 30s':''}`);
   }
   const data = await res.json();
   let raw = data.candidates?.[0]?.content?.parts?.[0]?.text||'';
@@ -2470,6 +2490,7 @@ async function applyHqDiff(cardEl){
     setProgress(`Saving ${item._existing?.fund||item.fund_name}…`);
     const fd=_familyData[fam.name];
     const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2;
+    if(rowIdx<2){errors.push(`Row not found for ${item._existing?.fund||item.fund_name}`);failed++;done++;continue;} // findIndex=-1 → rowIdx=1 → would overwrite header
     // Write to col I (Current Value), J (Gain), K (Return%) — cols are 1-based I=9
     const gain   = (item._proposedValue||0) - (item._existing?.invested||0);
     const retPct = item._existing?.invested > 0 ? ((gain/item._existing.invested)*100).toFixed(2)+'%' : '—';

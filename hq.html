@@ -2072,7 +2072,7 @@ async function executeHqAction(confirmKey, cardEl){
     ];
     try{
       const res = await fetchWithTimeout(
-        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
         {
           method:'POST',
           headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
@@ -2178,7 +2178,7 @@ async function executeHqAction(confirmKey, cardEl){
     const newVal=String(wmap.getNew(result)||'');
     const oldVal=wmap.getOld(match)||'—';
     try{
-      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!N${rowIdx}?valueInputOption=USER_ENTERED`,{method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[[newVal]]})});
+      const res=await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/portfolio_snapshot!N${rowIdx}?valueInputOption=RAW`,{method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[[newVal]]})});
       if(!res.ok)throw new Error(`HTTP ${res.status}`);
       match.navDate=newVal;
       try{const arow=[new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}),fam.name,'hq_ai_p3_write',match.investor,match.fund,`SOA Date: ${oldVal} → ${newVal}`,'auto'];await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[arow]})});}catch(le){console.warn(le);}
@@ -2498,7 +2498,7 @@ async function hqWritePmsAifSoaDates(pmsUpdates, token){
         const sr=ri+2; // header offset + 1-based
         // Write E:F = [currentValue, soaDate] — non-critical, ignore failures
         await fetchWithTimeout(
-          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!E${sr}:F${sr}?valueInputOption=USER_ENTERED`,
+          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!E${sr}:F${sr}?valueInputOption=RAW`,
           {method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
            body:JSON.stringify({values:[[String(value),soaDate]]})},6000).catch(()=>{});
       }
@@ -2597,7 +2597,7 @@ async function applyHqDiff(cardEl){
       item.folio||'',item.invested_value||0,item.current_value||0,'','','','',item.as_of_date||today,'','',item.fund_name,'','0'];
     try{
       const res=await fetchWithTimeout(
-        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/new_holdings!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
         {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},body:JSON.stringify({values:[row]})});
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       applied++;
@@ -2618,7 +2618,7 @@ async function applyHqDiff(cardEl){
     // Write col N (index 14, 1-based) = soaDate
     try{
       await fetchWithTimeout(
-        `https://sheets.googleapis.com/v4/spreadsheets/${famCfg.sheetId}/values/portfolio_snapshot!N${rowIdx}?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${famCfg.sheetId}/values/portfolio_snapshot!N${rowIdx}?valueInputOption=RAW`,
         {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
          body:JSON.stringify({values:[[item.as_of_date]]})});
       item._existing.navDate=item.as_of_date; // update local cache

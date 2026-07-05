@@ -1195,6 +1195,37 @@ function _stopAutoRefreshPoll(){
   if(_autoRefreshPollTimer){ clearInterval(_autoRefreshPollTimer); _autoRefreshPollTimer = null; }
 }
 
+// Recompute _familyData[famName].alerts from current in-memory holdings
+// Must be called after any navDate/soaDate update so renderActionQueue reflects changes
+function recomputeFamilyAlerts(famName){
+  const d = _familyData[famName];
+  if(!d?.holdings) return;
+  const alerts = [];
+  const now = new Date();
+  d.holdings.filter(h=>h.type==='PMS'||h.type==='AIF').forEach(h=>{
+    const raw = h.navDate||h.asOfDate;
+    // Parse YYYY-MM-DD or DD-MMM-YYYY or DD/MM/YYYY
+    let parsed = null;
+    if(raw && typeof raw==='string' && raw.match(/^\d{4}-\d{2}-\d{2}$/)) parsed=new Date(raw);
+    else if(raw && typeof raw==='string' && raw.length>3) parsed=new Date(raw.replace(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/,'$3-$2-$1'));
+    const daysSince = parsed&&!isNaN(parsed) ? Math.floor((now-parsed)/86400000) : null;
+    if(!daysSince && daysSince!==0){
+      alerts.push({priority:'medium',fund:h.fund||h.originalName||'?',investor:h.investor,
+        msg:`${h.fund||'?'} (${h.investor}) — no SOA date on record`,folio:h.folio,type:h.type});
+    } else if(daysSince>90){
+      alerts.push({priority:'low',fund:h.fund||h.originalName||'?',investor:h.investor,
+        msg:`${h.fund||'?'} (${h.investor}) — as of ${daysSince}d ago`,folio:h.folio,type:h.type});
+    }
+  });
+  // Zero-current-value alert
+  d.holdings.forEach(h=>{
+    if((h.value===0||h.value===null)&&h.invested>0)
+      alerts.push({priority:'high',fund:h.fund||'?',investor:h.investor,
+        msg:`${h.fund||'?'} (${h.investor}) — ₹0 current value`,folio:h.folio,type:h.type});
+  });
+  d.alerts = alerts;
+}
+
 function _classifyAlert(alert){
   const m = (alert.msg||'').toLowerCase();
   if(m.includes('no soa date'))            return 'soa_missing';
@@ -1966,6 +1997,7 @@ async function extractAndDiff(file, userContext){
   const sysPrompt = `You are extracting investment holdings from a file for the Bokaria family portfolio.
 KNOWN INVESTORS: ${allInvestors}
 SPECIAL FORMAT — GIRIK PMS STATEMENT: If the file has columns "HDFC FA CODE" and "Account Name" where Account Name contains "[NAME] JT MULTICAP" or "[NAME] HUF MULTICAP", this is a Girik PMS Excel statement. Rules for this format:
+- The file often has no explicit date column. Extract as_of_date from the FILENAME: e.g. "May'26" or "May 26" or "May-26" → last day of that month → "2026-05-31". "Apr'26" → "2026-04-30". Always output as_of_date in YYYY-MM-DD format. If the filename gives a year without century (e.g. '26'), assume 20XX (2026).
 - fund_name = "Girik Multicap Growth Equity Strategy" for ALL rows
 - folio = the value in "HDFC FA CODE" column (e.g. 10810722)
 - investor = extract person name from Account Name: "SHALINI BOKARIA JT MULTICAP" → "Shalini Bokaria", "PRASHANT BOKARIA HUF MULTICAP" → "Prashant Bokaria HUF", "TANVI BOKARIA JT MULTICAP" → "Tanvi Bokaria", "PRASHANT BOKARIA JT MULTICAP" → "Prashant Bokaria"
@@ -2256,6 +2288,12 @@ async function applyHqDiff(cardEl){
     }catch(e){ /* non-critical, ignore */ }
   }
   skipped += diff.duplicate.filter((_,i)=>!cardEl.querySelector(`#hd_dup_${i}`)?.checked).length;
+  // Recompute alerts for all affected families so action queue clears immediately
+  const affectedFamilies = new Set([
+    ...diff.update.map(i=>i._detectedFamily),
+    ...diff.duplicate.map(i=>i._detectedFamily)
+  ].filter(Boolean));
+  affectedFamilies.forEach(famName=>recomputeFamilyAlerts(famName));
   if(applied>0){renderAllFamilyCards();renderActionQueue();updateTotalBar();}
 
   // Final state
@@ -2272,11 +2310,58 @@ async function applyHqDiff(cardEl){
         ${errors.map(e=>`<div style="font-size:11px;color:var(--red);margin-top:3px">⚠ ${e}</div>`).join('')}
       </div>`;
   } else {
-    applyRow.innerHTML=`
-      <div style="color:var(--green);font-size:13px;font-weight:600;width:100%;display:flex;align-items:center;gap:6px">
-        <span style="font-size:16px">✓</span>
-        Done — ${applied} change${applied!==1?'s':''} saved to Sheets${skipped?` · ${skipped} skipped`:''}
-      </div>`;
+    // Check if any PMS/AIF updates had no as_of_date — if so, offer a date prompt
+    const pmsUpdatesNoDate = [...diff.update, ...diff.duplicate].filter(item=>{
+      const checked = diff.update.includes(item)
+        ? cardEl.querySelector(`#hd_upd_${diff.update.indexOf(item)}`)?.checked
+        : cardEl.querySelector(`#hd_dup_${diff.duplicate.indexOf(item)}`)?.checked;
+      return checked && !item.as_of_date && (item._existing?.type==='PMS'||item._existing?.type==='AIF');
+    });
+
+    if(pmsUpdatesNoDate.length > 0){
+      const dateInputId = 'hqSoaDateInput_'+Date.now();
+      applyRow.innerHTML=`
+        <div style="width:100%">
+          <div style="color:var(--green);font-size:13px;font-weight:600;margin-bottom:8px">
+            <span style="font-size:16px">✓</span>
+            Done — ${applied} change${applied!==1?'s':''} saved to Sheets${skipped?` · ${skipped} skipped`:''}
+          </div>
+          <div style="font-size:11px;color:var(--accent);margin-bottom:6px">
+            📅 No statement date found in file — set SOA date for ${pmsUpdatesNoDate.length} PMS/AIF holding${pmsUpdatesNoDate.length>1?'s':''}:
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="date" id="${dateInputId}" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px"
+              value="${new Date().toISOString().slice(0,10)}">
+            <button onclick="(async()=>{
+              const dateVal=document.getElementById('${dateInputId}').value;
+              if(!dateVal){return;}
+              this.disabled=true; this.textContent='Saving…';
+              const itemsToUpdate=window._hqDiffs?.['${diffKey}'] ? [...window._hqDiffs['${diffKey}'].update,...window._hqDiffs['${diffKey}'].duplicate].filter(item=>!item.as_of_date&&(item._existing?.type==='PMS'||item._existing?.type==='AIF')) : [];
+              for(const item of itemsToUpdate){
+                const fam=getFamilyConfig(item._detectedFamily); if(!fam) continue;
+                const fd=_familyData[fam.name]; if(!fd) continue;
+                const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2; if(rowIdx<2) continue;
+                try{
+                  await fetchWithTimeout(
+                    'https://sheets.googleapis.com/v4/spreadsheets/'+fam.sheetId+'/values/portfolio_snapshot!N'+rowIdx+'?valueInputOption=USER_ENTERED',
+                    {method:'PUT',headers:{Authorization:'Bearer '+_token,'Content-Type':'application/json'},body:JSON.stringify({values:[[dateVal]]})});
+                  item._existing.navDate=dateVal;
+                }catch(e){}
+              }
+              renderActionQueue(); renderAllFamilyCards();
+              this.closest('div').innerHTML='<span style="color:var(--green)">✓ SOA date saved: '+dateVal+'</span>';
+            })()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer;font-weight:600">
+              Set Date
+            </button>
+          </div>
+        </div>`;
+    } else {
+      applyRow.innerHTML=`
+        <div style="color:var(--green);font-size:13px;font-weight:600;width:100%;display:flex;align-items:center;gap:6px">
+          <span style="font-size:16px">✓</span>
+          Done — ${applied} change${applied!==1?'s':''} saved to Sheets${skipped?` · ${skipped} skipped`:''}
+        </div>`;
+    }
   }
 }
 

@@ -1804,8 +1804,8 @@ Set ui_action: null for all non-navigate intents.
 PHASE 5 — FILE WORKFLOW GUIDANCE (HQ):
 - SOA upload and AB import are done in individual family dashboards, not in HQ.
 - "upload SOA for Piyush" → tell user to open Piyush dashboard and use the Upload Statement button or AI bar paperclip
-- "import AB file for Prabin" → tell user to open Prabin dashboard and click Import AB Holdings
-- HQ does not process file uploads — direct users to the correct family dashboard.
+- AB Holdings CSV files (filename contains "AB Holdings" or CSV starts with UserId,Instrument header) are handled directly in HQ — no need to go to individual dashboards.
+- For AB file imports: tell user to attach the AB CSV file to this chat and send it.
 
 FETCH_THEN_ANSWER INTENT — live data refresh before answering:
 - Use intent="fetch_then_answer" when the user asks for "latest", "current", "live", "today's", or "real-time" values AND the query is about MF NAVs or NYSE stock prices.
@@ -1833,7 +1833,7 @@ async function callHqGemini(userInput){
   const messages = [..._aiThread, {role:'user', parts:[{text:userInput}]}];
 
   const res = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
     {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -2302,7 +2302,7 @@ Extract ALL holdings. Return ONLY valid JSON (no markdown):
   }
 
   const res = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       system_instruction:{parts:[{text:sysPrompt}]},
       contents:[{role:'user',parts}],
@@ -2485,6 +2485,174 @@ function hqSendOpt(i){ hqSend((window._hqOptions||[])[i]||''); }
 // Called after HQ Apply confirms PMS/AIF holdings — makes individual dashboards
 // pick up the HQ-applied date immediately on next loadFromSheets without needing
 // the snapshot restore workaround.
+
+// =====================================================================
+// HQ AB EQUITY IMPORT (S28) - Direct CSV parse, no Gemini
+// =====================================================================
+const HQ_AB_USER_MAP = {
+  '1014635':'Prashant Bokaria',   '749037':'Shalini Bokaria',
+  '3062540':'Tanay Bokaria',      '778607':'Prashant Bokaria HUF',
+  '3062575':'Tanvi Bokaria',      '1014581':'Piyush Bokaria',
+  '748497':'Piyush Bokaria HUF',  '1014137':'Babita Bokaria',
+  '3062860':'Rohan Bokaria',      '1092143':'Pranjul Bokaria',
+  '1014836':'Prabin Bokaria',     '1014668':'Umed Singh Bokaria',
+  '749619':'Umed Singh Bokaria HUF','1014163':'Sushila Bokaria',
+  '1089031':'Tuk Tuk Exports',    '749036':'Ritu Bokaria',
+};
+
+function isABEquityFile(name, csvText){
+  if(/AB.?Holdings/i.test(name) || /Aditya.?Birla.*Holdings/i.test(name)) return true;
+  if(typeof csvText === 'string'){
+    const first = csvText.split('\n')[0].toLowerCase().replace(/\s/g,'');
+    if(first.startsWith('userid,instrument')) return true;
+  }
+  return false;
+}
+
+function extractABDateHQ(filename){
+  const m = (filename||'').match(/(\d{2})[_\-.](\d{2})[_\-.](\d{4})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : new Date().toISOString().slice(0,10);
+}
+
+function parseABCsvHQ(text, filename){
+  const asOf = extractABDateHQ(filename);
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  if(lines.length < 2) throw new Error('File appears empty');
+  const hdr = lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,'').toLowerCase());
+  const idx = n => hdr.findIndex(h=>h.includes(n));
+  const iUid=idx('userid'), iIns=idx('instrument'), iQty=idx('qty'),
+        iLtp=hdr.findIndex(h=>h==='ltp'), iAvg=idx('avg price'),
+        iInv=idx('invested value'), iCur=idx('current value'),
+        iPnl=hdr.findIndex(h=>h==='p&l');
+  const rows = [];
+  for(const line of lines.slice(1)){
+    const cols = line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+    const uid = (cols[iUid]||'').trim();
+    if(!uid || isNaN(parseInt(uid,10))) continue;
+    const qty = parseFloat(cols[iQty])||0;
+    if(qty <= 0) continue;
+    rows.push({
+      userId:uid, investor:HQ_AB_USER_MAP[uid]||null,
+      instrument:cols[iIns]||'', qty,
+      avgPrice:parseFloat(cols[iAvg])||0,
+      invested:parseFloat(cols[iInv])||0,
+      currentValue:parseFloat(cols[iCur])||0,
+      pnl:parseFloat(cols[iPnl])||0,
+      ltp:parseFloat(cols[iLtp])||0,
+      asOf, source:'AB Direct',
+    });
+  }
+  if(!rows.length) throw new Error('No valid AB stock rows found (check header format)');
+  const byFamily={}, unknown=[];
+  rows.forEach(r=>{
+    const fam = r.investor ? INVESTOR_TO_FAMILY[(r.investor).toLowerCase()] : null;
+    if(!fam){ unknown.push(r); return; }
+    (byFamily[fam]||(byFamily[fam]=[])).push(r);
+  });
+  return {rows, byFamily, unknown, asOf};
+}
+
+function renderABImportCard(parsed, fileName){
+  const thread = document.getElementById('hqThread');
+  const {byFamily, unknown, asOf, rows} = parsed;
+  let html = '';
+  Object.entries(byFamily).forEach(([fam,rs])=>{
+    const inv = {};
+    rs.forEach(r=>{ inv[r.investor]=(inv[r.investor]||0)+1; });
+    const detail = Object.entries(inv).map(([n,c])=>`${n}: ${c} stock${c>1?'s':''}`).join(', ');
+    const total = rs.reduce((s,r)=>s+(r.currentValue||0),0);
+    html += `<div style="margin:4px 0;font-size:12px"><span style="color:var(--accent);font-weight:600">${fam}</span> — ${detail} — ₹${(total/1e5).toFixed(2)}L</div>`;
+  });
+  if(unknown.length){
+    const ids = [...new Set(unknown.map(r=>r.userId))];
+    html += `<div style="margin:4px 0;font-size:11px;color:var(--red)">⚠ ${unknown.length} row(s) with unknown UserId: ${ids.join(', ')} — add to config tab as ab_user_USERID=Name</div>`;
+  }
+  const key = 'ab_' + Date.now();
+  (window._hqABImports=window._hqABImports||{})[key] = parsed;
+  const card = document.createElement('div');
+  card.style.cssText = 'margin:12px 0;padding:14px 16px;background:var(--card-bg);border:1px solid var(--border);border-radius:10px;max-width:660px';
+  card.dataset.abkey = key;
+  card.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">
+      AB Holdings: <strong>${fileName}</strong> &mdash; ${rows.length} stock${rows.length>1?'s':''} &middot; as of ${asOf}
+    </div>
+    ${html}
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn-secondary" style="font-size:12px;padding:5px 14px"
+        onclick="this.closest('[data-abkey]').remove()">Cancel</button>
+      <button class="btn-primary" style="font-size:12px;padding:5px 14px;background:var(--green);border-color:var(--green)"
+        onclick="applyABImport('${key}',this.closest('[data-abkey]'))">Import to Sheets</button>
+    </div>
+    <div class="ab-status" style="margin-top:8px;font-size:11px;color:var(--text-dim)"></div>`;
+  thread.appendChild(card);
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function applyABImport(key, cardEl){
+  const parsed = window._hqABImports?.[key];
+  if(!parsed){ hqAppendMsg('error','AB import data expired — re-upload the file.'); return; }
+  const applyBtn = cardEl.querySelector('.btn-primary');
+  const statusEl = cardEl.querySelector('.ab-status');
+  if(applyBtn){ applyBtn.disabled=true; applyBtn.textContent='Importing…'; }
+  if(!_token){
+    if(statusEl) statusEl.innerHTML = '<span style="color:var(--red)">⚠ Not connected to Sheets — connect first.</span>';
+    if(applyBtn){ applyBtn.disabled=false; applyBtn.textContent='Import to Sheets'; }
+    return;
+  }
+  const {byFamily} = parsed;
+  let totalWritten=0, errors=[];
+  for(const [famName, rows] of Object.entries(byFamily)){
+    const fam = FAMILIES.find(f=>f.name===famName);
+    if(!fam?.sheetId){ errors.push(`${famName}: no sheet ID`); continue; }
+    if(statusEl) statusEl.textContent = `Writing ${famName}…`;
+    try{
+      // Read existing, keep rows for investors NOT in this import
+      let kept = [];
+      try{
+        const rr = await fetchWithTimeout(
+          `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/ab_holdings!A2:K2000`,
+          {headers:{Authorization:`Bearer ${_token}`}}, 8000);
+        if(rr.ok){ const d=await rr.json(); kept=(d.values||[]); }
+      }catch(e){}
+      const incoming = new Set(rows.map(r=>r.investor).filter(Boolean));
+      const keptRows = kept.filter(r=>!incoming.has(r[0]||''))
+        .map(r=>[r[0]||'',r[1]||'',r[2]||'',+r[3]||0,+r[4]||0,+r[5]||0,+r[6]||0,+r[7]||0,+r[8]||0,r[9]||'',r[10]||'']);
+      const newRows = rows.map(r=>[r.investor||'',r.userId||'',r.instrument||'',
+        r.qty||0,r.avgPrice||0,r.invested||0,r.currentValue||0,r.pnl||0,r.ltp||0,r.asOf||'','AB Direct']);
+      const header = [['investor','userId','instrument','qty','avgPrice','invested','currentValue','pnl','ltp','asOf','source']];
+      // Clear then rewrite
+      await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/ab_holdings!A1:K2000:clear`,
+        {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'}}, 8000);
+      const wr = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/ab_holdings!A1?valueInputOption=RAW`,
+        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+         body:JSON.stringify({values:[...header,...keptRows,...newRows]})}, 12000);
+      if(!wr.ok) throw new Error(`HTTP ${wr.status}`);
+      // Update _familyData in memory
+      if(_familyData[famName]){
+        _familyData[famName].holdings = (_familyData[famName].holdings||[]).filter(h=>h.type!=='AB Equity');
+        rows.forEach(r=>{
+          _familyData[famName].holdings.push({
+            fund:r.instrument, investor:r.investor, type:'AB Equity',
+            folio:r.userId, invested:r.invested, value:r.currentValue, asOfDate:r.asOf,
+          });
+        });
+        _familyData[famName].totalValue = _familyData[famName].holdings.reduce((s,h)=>s+(h.value||0),0);
+      }
+      totalWritten += rows.length;
+    }catch(e){ errors.push(`${famName}: ${e.message}`); }
+  }
+  renderAllFamilyCards(); renderActionQueue(); updateTotalBar();
+  const n = Object.keys(byFamily).length;
+  const msg = errors.length
+    ? `✓ ${totalWritten} imported · ⚠ ${errors.join('; ')}`
+    : `✓ ${totalWritten} AB stock${totalWritten>1?'s':''} imported to ${n} family sheet${n>1?'s':''}`;
+  if(statusEl){ statusEl.style.color=errors.length?'var(--red)':'var(--green)'; statusEl.textContent=msg; }
+  if(applyBtn) applyBtn.textContent='Done';
+  delete window._hqABImports[key];
+}
+
 async function hqWritePmsAifSoaDates(pmsUpdates, token){
   if(!pmsUpdates.length || !token) return;
   // Group by sheetId for efficient reads (one read per family sheet)
@@ -2824,6 +2992,14 @@ async function hqSend(prefillText){
         catch(e){ hqAppendMsg('error',`⚠ ${file.name} — ${e.message}`); continue; }
         if(thinkEl) thinkEl.querySelector('.hq-bubble').innerHTML=
           `<div class="hq-thinking">Extracting from <strong>${file.name}</strong>…<div class="hq-dots"><span></span><span></span><span></span></div></div>`;
+        // AB Equity CSV — detect by filename/header, parse directly (no Gemini)
+        if(isABEquityFile(file.name, typeof content==='string'?content:'')){
+          if(thinkEl) thinkEl.querySelector('.hq-bubble').innerHTML=
+            '<div class="hq-thinking">Parsing AB holdings…<div class="hq-dots"><span></span><span></span><span></span></div></div>';
+          try{ renderABImportCard(parseABCsvHQ(content, file.name), file.name); }
+          catch(e){ hqAppendMsg('error',`⚠ ${file.name} — ${e.message}`); }
+          continue;
+        }
         let extraction;
         try{ extraction=await extractAndDiff(file, userText||'Review and update portfolio'); }
         catch(e){ hqAppendMsg('error',`⚠ ${file.name} — ${e.message}`); continue; }

@@ -1936,6 +1936,12 @@ function renderHqResponse(result, userInput){
     return;
   }
 
+  // Write intent safety: if no action_preview, surface a helpful message instead of silently failing
+  if(!result.is_read_only && !result.action_preview){
+    hqAppendMsg('ai', result.response_text || 'I need more detail to proceed. Could you specify the exact holding name and the new value?');
+    return;
+  }
+
   if(result.action_preview){
     const thread = document.getElementById('hqThread');
     const card = document.createElement('div');
@@ -2272,7 +2278,7 @@ Extract ALL holdings. Return ONLY valid JSON (no markdown):
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       system_instruction:{parts:[{text:sysPrompt}]},
       contents:[{role:'user',parts}],
-      generationConfig:{temperature:0,maxOutputTokens:3000,responseMimeType:'application/json'}
+      generationConfig:{temperature:0,maxOutputTokens:4500,responseMimeType:'application/json'}
     })}
   );
   if(!res.ok) throw new Error(`Gemini error ${res.status}`);

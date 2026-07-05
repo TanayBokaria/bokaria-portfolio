@@ -988,10 +988,10 @@ async function loadFamilyData(family){
             folio:String(row[6]||''), invested:parseFloat(row[7])||0,
             value:parseFloat(row[8])||0, gain:parseFloat(row[9])||0,
             gainPct:parseFloat(row[10])||0, cagr:parseFloat(row[11])||0,
-            nav:parseFloat(row[12])||0, navDate:row[13]||'',
-            purchaseDate:row[14]||'', schemeCode:String(row[16]||''),
+            nav:parseFloat(row[12])||0, navDate:_ds(row[13]),
+            purchaseDate:_ds(row[14]), schemeCode:String(row[16]||''),
             currency:row[17]||'INR', usdValue:parseFloat(row[18])||0,
-            units:parseFloat(row[19])||0, asOfDate:row[13]||row[0]||'',
+            units:parseFloat(row[19])||0, asOfDate:_ds(row[13])||_ds(row[0])||'',
             _fromNewHoldings:true
           });
           existingKeys.add(key);

@@ -113,6 +113,47 @@ input{font-family:var(--font);}
 
 .family-auto-refresh{font-size:10px;color:var(--text-muted);margin-top:4px;font-family:var(--font-mono,monospace);letter-spacing:0.2px;}
 /* ── Action Queue ────────────────────────────────────────────────────────── */
+.hq-audit-banner{
+  background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.25);
+  border-radius:10px;margin-bottom:12px;overflow:hidden;
+}
+.hq-audit-header{
+  display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;
+  font-size:13px;font-weight:600;color:var(--text);
+  border-bottom:1px solid rgba(245,158,11,0.15);
+}
+.hq-audit-header:hover{background:rgba(245,158,11,0.05);}
+.hq-audit-icon{font-size:15px;}
+.hq-audit-title{flex:1;}
+.hq-audit-chevron{font-size:10px;color:var(--text-dim);}
+.hq-audit-body-inner{padding:8px 0;}
+.hq-audit-section-title{
+  font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+  color:var(--text-dim);padding:6px 16px 4px;
+}
+.hq-audit-row{
+  display:flex;align-items:center;gap:10px;padding:8px 16px;
+  border-bottom:1px solid var(--border);transition:background 0.15s;
+}
+.hq-audit-row:last-child{border-bottom:none;}
+.hq-audit-row:hover{background:rgba(255,255,255,0.02);}
+.hq-audit-dot{width:8px;height:8px;border-radius:50%;background:#f59e0b;flex-shrink:0;}
+.hq-audit-dot.red{background:var(--red);}
+.hq-audit-info{flex:1;min-width:0;}
+.hq-audit-fund{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hq-audit-meta{font-size:11px;color:var(--text-dim);margin-top:2px;}
+.hq-audit-value{font-size:12px;color:var(--text-muted);text-align:right;white-space:nowrap;margin-right:8px;}
+.hq-audit-actions{display:flex;gap:5px;flex-shrink:0;}
+.hq-audit-btn{
+  font-size:11px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text-muted);cursor:pointer;white-space:nowrap;
+  transition:all 0.15s;
+}
+.hq-audit-btn:hover{background:var(--card);color:var(--text);}
+.hq-audit-btn.green{border-color:rgba(107,191,143,0.4);color:var(--green);}
+.hq-audit-btn.green:hover{background:rgba(107,191,143,0.1);}
+.hq-audit-btn.red{border-color:rgba(239,107,107,0.4);color:var(--red);}
+.hq-audit-btn.red:hover{background:rgba(239,107,107,0.1);}
 .hq-action-queue{
   background:var(--surface);border:1px solid var(--border);
   border-radius:12px;margin-bottom:20px;overflow:hidden;
@@ -497,6 +538,15 @@ input{font-family:var(--font);}
   <!-- Action Queue -->
   <div class="hq-section-label" id="hqHealthSectionLabel" style="display:none">System Health</div>
   <div id="hqHealthPanelInline"></div>
+  <!-- Portfolio Audit Banner -->
+  <div class="hq-audit-banner" id="hqAuditBanner" style="display:none">
+    <div class="hq-audit-header" onclick="document.getElementById('hqAuditBody').style.display=document.getElementById('hqAuditBody').style.display==='none'?'block':'none';this.querySelector('.hq-audit-chevron').textContent=document.getElementById('hqAuditBody').style.display==='none'?'▼':'▲'">
+      <span class="hq-audit-icon">📋</span>
+      <span class="hq-audit-title">Portfolio Audit — <span id="hqAuditCount">0</span> holding<span id="hqAuditPlural">s</span> need attention</span>
+      <span class="hq-audit-chevron">▲</span>
+    </div>
+    <div id="hqAuditBody"></div>
+  </div>
   <div class="hq-section-label">Action Queue</div>
   <div class="hq-action-queue" id="hqActionQueue">
     <div class="hq-aq-header">
@@ -832,6 +882,7 @@ async function hqLoadAll(){
   renderAllFamilyCards();
   renderActionQueue();
   updateTotalBar();
+  renderAuditBanner(); // staleness audit — runs after all family data loaded
   // Show reload + report buttons now that we're connected
   document.getElementById('hqHeaderActions').style.display = 'flex';
   // Auto-run health checks
@@ -1197,6 +1248,185 @@ function _stopAutoRefreshPoll(){
 
 // Recompute _familyData[famName].alerts from current in-memory holdings
 // Must be called after any navDate/soaDate update so renderActionQueue reflects changes
+// ══════════════════════════════════════════════════════════════════════════════
+// PORTFOLIO STALENESS AUDIT
+// ══════════════════════════════════════════════════════════════════════════════
+
+const AUDIT_THRESHOLDS = { MF: 90, PMS: 180, AIF: 180, 'AB Equity': 90, NYSE: null };
+const AUDIT_SNOOZE_KEY = 'bokaria_audit_snooze';
+const AUDIT_REDEEMED_KEY = 'bokaria_audit_redeemed';
+
+function _auditGetSnooze(){
+  try{ return JSON.parse(localStorage.getItem(AUDIT_SNOOZE_KEY)||'{}'); }catch(e){ return {}; }
+}
+function _auditSaveSnooze(map){
+  try{ localStorage.setItem(AUDIT_SNOOZE_KEY, JSON.stringify(map)); }catch(e){}
+}
+
+function runStalenessAudit(){
+  const snoozeMap = _auditGetSnooze();
+  const now = new Date();
+  // Clean expired snoozes
+  Object.keys(snoozeMap).forEach(k=>{ if(new Date(snoozeMap[k])<=now) delete snoozeMap[k]; });
+  _auditSaveSnooze(snoozeMap);
+
+  const flagged = [];
+
+  FAMILIES.filter(f=>!f.comingSoon).forEach(f=>{
+    const d = _familyData[f.name];
+    if(!d||d.error||!d.holdings) return;
+
+    d.holdings.forEach(h=>{
+      const type = h.type||'MF';
+      const value = parseFloat(h.value)||0;
+      const invested = parseFloat(h.invested)||0;
+      const fund = h.fund||h.originalName||'Unknown';
+      const key = `${f.name}||${h.investor||''}||${fund}`;
+
+      if(snoozeMap[key]) return; // snoozed
+
+      // ── Near-zero value (any type): likely redeemed ──
+      if(value<=100 && invested>10000){
+        flagged.push({key,family:f.name,color:f.color,investor:h.investor,fund,type,
+          value,invested,daysSince:null,reason:'near_zero',
+          label:'₹0 or near-zero value — possibly fully redeemed?',dot:'red'});
+        return;
+      }
+
+      // ── Staleness by type ──
+      const threshold = AUDIT_THRESHOLDS[type];
+      if(!threshold) return; // NYSE: no age-based flagging
+
+      const dateRaw = h.navDate||h.asOfDate||'';
+      let lastUpdate = null;
+      if(dateRaw && typeof dateRaw==='string'){
+        if(dateRaw.match(/^\d{4}-\d{2}-\d{2}$/)) lastUpdate=new Date(dateRaw);
+        else if(dateRaw.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/)){
+          const p=dateRaw.split(/[\/\-]/);
+          lastUpdate=new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`);
+        }
+      }
+
+      const daysSince = (lastUpdate&&!isNaN(lastUpdate))
+        ? Math.floor((now-lastUpdate)/86400000) : 9999;
+
+      if(daysSince>=threshold){
+        flagged.push({key,family:f.name,color:f.color,investor:h.investor,fund,type,
+          value,invested,daysSince,reason:'stale',dot:'amber',
+          label: daysSince>=9999
+            ? 'No update date on record'
+            : `Not updated in ${daysSince} days (${Math.round(daysSince/30)}mo)`
+        });
+      }
+    });
+  });
+
+  // Sort: near_zero first, then most stale first
+  flagged.sort((a,b)=>{
+    if(a.reason==='near_zero'&&b.reason!=='near_zero') return -1;
+    if(b.reason==='near_zero'&&a.reason!=='near_zero') return 1;
+    return (b.daysSince||9999)-(a.daysSince||9999);
+  });
+
+  return flagged;
+}
+
+function renderAuditBanner(){
+  const banner = document.getElementById('hqAuditBanner');
+  const body   = document.getElementById('hqAuditBody');
+  const count  = document.getElementById('hqAuditCount');
+  const plural = document.getElementById('hqAuditPlural');
+  if(!banner||!body) return;
+
+  const flagged = runStalenessAudit();
+  if(!flagged.length){ banner.style.display='none'; return; }
+
+  count.textContent = flagged.length;
+  plural.textContent = flagged.length===1?'':'s';
+  banner.style.display='block';
+
+  // Split into sections
+  const zeros  = flagged.filter(h=>h.reason==='near_zero');
+  const stales = flagged.filter(h=>h.reason==='stale');
+
+  const _fmtCr = v => {const n=parseFloat(v)||0; return n>=1e7?'₹'+(n/1e7).toFixed(2)+'Cr':'₹'+(n/1e5).toFixed(2)+'L';};
+  const _fmtFam = (fam,color) => `<span style="color:${color};font-size:10px;font-weight:600">${fam}</span>`;
+
+  const _row = (h,i) => `
+    <div class="hq-audit-row" id="hq_audit_row_${i}">
+      <div class="hq-audit-dot${h.dot==='red'?' red':''}"></div>
+      <div class="hq-audit-info">
+        <div class="hq-audit-fund">${h.fund}</div>
+        <div class="hq-audit-meta">${h.investor} · ${_fmtFam(h.family,h.color)} · ${h.type} · ${h.label}</div>
+      </div>
+      <div class="hq-audit-value">${_fmtCr(h.value)}</div>
+      <div class="hq-audit-actions">
+        <button class="hq-audit-btn green" onclick="auditSnooze('${h.key.replace(/'/g,"\'")}',${i})">Still active</button>
+        <button class="hq-audit-btn" onclick="auditNeedsUpdate('${h.family}','${h.key.replace(/'/g,"\'")}',${i})">Needs update</button>
+        <button class="hq-audit-btn red" onclick="auditRedeemed('${h.key.replace(/'/g,"\'")}','${h.fund.replace(/'/g,"\'")}',${i})">Redeemed</button>
+      </div>
+    </div>`;
+
+  let html = '<div class="hq-audit-body-inner">';
+  if(zeros.length){
+    html += `<div class="hq-audit-section-title" style="color:var(--red)">⚠ Near-zero value — possibly fully redeemed (${zeros.length})</div>`;
+    html += zeros.map((h,i)=>_row(h,i)).join('');
+  }
+  if(stales.length){
+    html += `<div class="hq-audit-section-title">🕐 Not updated within threshold (${stales.length})</div>`;
+    html += stales.map((h,i)=>_row(h,zeros.length+i)).join('');
+  }
+  html += `<div style="padding:8px 16px 10px;font-size:11px;color:var(--text-dim)">"Still active" snoozes for 90 days. "Redeemed" removes from audit permanently — delete from your dashboard manually.</div>`;
+  html += '</div>';
+  body.innerHTML = html;
+
+  // Store flagged globally for onclick handlers
+  window._auditFlagged = flagged;
+}
+
+function auditSnooze(key, idx){
+  const map = _auditGetSnooze();
+  const until = new Date(); until.setDate(until.getDate()+90);
+  map[key] = until.toISOString();
+  _auditSaveSnooze(map);
+  document.getElementById(`hq_audit_row_${idx}`)?.remove();
+  // Update count
+  const remaining = document.querySelectorAll('.hq-audit-row').length;
+  if(!remaining){ document.getElementById('hqAuditBanner').style.display='none'; return; }
+  document.getElementById('hqAuditCount').textContent = remaining;
+  document.getElementById('hqAuditPlural').textContent = remaining===1?'':'s';
+}
+
+function auditNeedsUpdate(famName, key, idx){
+  // Navigate to the family dashboard — Priya can upload SOA there
+  const fam = getFamilyConfig(famName);
+  if(fam?.url) window.open(fam.url, '_blank');
+  // Also snooze for 7 days (she's aware, working on it)
+  const map = _auditGetSnooze();
+  const until = new Date(); until.setDate(until.getDate()+7);
+  map[key] = until.toISOString();
+  _auditSaveSnooze(map);
+  document.getElementById(`hq_audit_row_${idx}`)?.remove();
+  const remaining = document.querySelectorAll('.hq-audit-row').length;
+  if(!remaining){ document.getElementById('hqAuditBanner').style.display='none'; return; }
+  document.getElementById('hqAuditCount').textContent = remaining;
+  document.getElementById('hqAuditPlural').textContent = remaining===1?'':'s';
+}
+
+function auditRedeemed(key, fundName, idx){
+  // Snooze permanently (10 years) + show confirmation
+  if(!confirm(`Mark "${fundName}" as redeemed? It will be removed from the audit permanently.\n\nRemember to also delete it from the family dashboard.`)) return;
+  const map = _auditGetSnooze();
+  const until = new Date(); until.setFullYear(until.getFullYear()+10);
+  map[key] = until.toISOString();
+  _auditSaveSnooze(map);
+  document.getElementById(`hq_audit_row_${idx}`)?.remove();
+  const remaining = document.querySelectorAll('.hq-audit-row').length;
+  if(!remaining){ document.getElementById('hqAuditBanner').style.display='none'; return; }
+  document.getElementById('hqAuditCount').textContent = remaining;
+  document.getElementById('hqAuditPlural').textContent = remaining===1?'':'s';
+}
+
 function recomputeFamilyAlerts(famName){
   const d = _familyData[famName];
   if(!d?.holdings) return;

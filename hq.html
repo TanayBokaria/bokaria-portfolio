@@ -1301,16 +1301,27 @@ function runStalenessAudit(){
 
       const dateRaw = h.navDate||h.asOfDate||'';
       let lastUpdate = null;
-      if(dateRaw && typeof dateRaw==='string'){
-        if(dateRaw.match(/^\d{4}-\d{2}-\d{2}$/)){
-          lastUpdate=new Date(dateRaw); // YYYY-MM-DD
+      // Helper: parse Google Sheets date serial (integer ~30000–60000) → JS Date
+      const _parseSerial = n => new Date((n-25569)*86400*1000);
+      // Helper: parse DD-MMM-YYYY with explicit month map (avoids browser inconsistency)
+      const _MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+      const _parseDMY = s => {
+        const mp=/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(s);
+        if(!mp||_MON[mp[2]]===undefined) return null;
+        return new Date(parseInt(mp[3]),_MON[mp[2]],parseInt(mp[1]));
+      };
+      if(typeof dateRaw === 'number' && !isNaN(dateRaw) && dateRaw>30000 && dateRaw<80000){
+        // Google Sheets UNFORMATTED_VALUE returns date serials as JS numbers
+        lastUpdate = _parseSerial(dateRaw);
+      } else if(dateRaw && typeof dateRaw==='string'){
+        // Also handle string representations of date serials e.g. "46018"
+        const _n = Number(dateRaw);
+        if(!isNaN(_n) && _n>30000 && _n<80000 && !/[-\/A-Za-z]/.test(dateRaw)){
+          lastUpdate = _parseSerial(_n);
+        } else if(dateRaw.match(/^\d{4}-\d{2}-\d{2}$/)){
+          lastUpdate=new Date(dateRaw); // YYYY-MM-DD (ISO — always safe)
         } else if(dateRaw.match(/^\d{1,2}-[A-Za-z]{3}-\d{4}$/)){
-          lastUpdate=new Date(dateRaw); // DD-MMM-YYYY — browser parses ok with hyphens
-          if(isNaN(lastUpdate)){
-            // Fallback: manual parse "31-May-2026"
-            const mp=/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(dateRaw);
-            if(mp) lastUpdate=new Date(`${mp[3]}-${mp[2]}-${mp[1].padStart(2,'0')}`);
-          }
+          lastUpdate=_parseDMY(dateRaw); // DD-MMM-YYYY e.g. "04-Jul-2026" from mfapi.in
         } else if(dateRaw.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/)){
           const p=dateRaw.split(/[\/\-]/);
           lastUpdate=new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`); // DD/MM/YYYY

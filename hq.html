@@ -942,7 +942,7 @@ async function loadFamilyData(family){
       currency:     row[17]||'INR',
       usdValue:     parseFloat(row[18])||0,
       units:        parseFloat(row[19])||0,
-      asOfDate:     row[13]||'', // col N only (navDate/soaDate) — do NOT fall back to row[0] (snapshot timestamp)
+      asOfDate:     _ds(row[13])||'', // col N only (navDate/soaDate) — do NOT fall back to row[0] (snapshot timestamp)
     })).filter(h=>h.fund&&h.investor);
 
     // Staleness alerts

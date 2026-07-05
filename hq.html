@@ -1807,14 +1807,14 @@ async function callHqGemini(userInput){
   const messages = [..._aiThread, {role:'user', parts:[{text:userInput}]}];
 
   const res = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
     {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         system_instruction:{parts:[{text:sysPrompt}]},
         contents: messages,
-        generationConfig:{temperature:0, maxOutputTokens:4000, responseMimeType:'application/json', thinkingConfig:{thinkingBudget:0}}
+        generationConfig:{temperature:0, maxOutputTokens:4500, responseMimeType:'application/json', thinkingConfig:{thinkingLevel:'minimal'}}
       })
     }
   );
@@ -2274,7 +2274,7 @@ Extract ALL holdings. Return ONLY valid JSON (no markdown):
   }
 
   const res = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       system_instruction:{parts:[{text:sysPrompt}]},
       contents:[{role:'user',parts}],

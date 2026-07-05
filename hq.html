@@ -1627,9 +1627,16 @@ function buildHqSystemPrompt(){
     const nyseTotal = nyseH.reduce((s,h)=>s+(h.value||0),0);
     const abTotal   = abH.reduce((s,h)=>s+(h.value||0),0);
 
+    // Pre-compute investor totals (authoritative — avoids AI aggregation errors on mixed formats)
+    const _invTots = {};
+    d.holdings.forEach(h=>{ _invTots[h.investor||'?'] = (_invTots[h.investor||'?']||0)+(h.value||0); });
+    const _invTotStr = Object.entries(_invTots).sort((a,b)=>b[1]-a[1])
+      .map(([inv,v])=>`${inv}: ₹${(v/1e7).toFixed(2)}Cr`).join(' | ');
+
     let ctx = `\n${'═'.repeat(6)} ${f.name.toUpperCase()} FAMILY — ${d.holdings.length} holdings, ₹${(d.totalValue/1e7).toFixed(2)}Cr total ${'═'.repeat(6)}`;
     ctx += `\nInvestors: ${f.investors.join(', ')}`;
     ctx += `\nBreakdown: MF ₹${(mfTotal/1e7).toFixed(2)}Cr | PMS/AIF ₹${(pmsTotal/1e7).toFixed(2)}Cr | NYSE ₹${(nyseTotal/1e7).toFixed(2)}Cr | AB Equity ₹${(abTotal/1e7).toFixed(2)}Cr`;
+    ctx += `\nINVESTOR TOTALS (pre-computed — use directly, do NOT re-sum): ${_invTotStr}`;
 
     // ── Mutual Funds — full list, pipe-delimited
     if(mfH.length){

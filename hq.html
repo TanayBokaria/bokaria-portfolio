@@ -2056,7 +2056,7 @@ function renderHqDiff(extraction, fileName){
       return fn.includes(it.slice(0,15))||it.includes(fn.slice(0,15));
     });
     if(!match){ diff.newItems.push({...item,_detectedFamily:detectedFam}); return; }
-    matchedExistingIds.add(match.id);
+    matchedExistingIds.add(match); // use object ref — match.id is undefined for Sheet-loaded holdings
     const diff_pct = match.value>0 ? Math.abs(match.value-(item.current_value||0))/match.value : 1;
     if(diff_pct<0.005) diff.duplicate.push({...item,_existing:match,_detectedFamily:detectedFam});
     else diff.update.push({...item,_existing:match,_proposedValue:item.current_value,_detectedFamily:detectedFam});
@@ -2079,8 +2079,11 @@ function renderHqDiff(extraction, fileName){
     if(item.folio) stmtFolios.add(String(item.folio).trim());
     // For PMS/AIF, collect manager keywords (first meaningful word of fund name)
     if((item.type||'').match(/PMS|AIF/i)){
-      const firstWord = (item.fund_name||'').split(/[\s\-]/)[0].toLowerCase();
-      if(firstWord.length >= 4) stmtHouses.add(firstWord);
+      // Extract manager keywords: first meaningful word(s) of fund name
+      // e.g. "Girik Multicap Growth..." → adds "girik"; "Kotak Optimus..." → adds "kotak"
+      const words = (item.fund_name||'').toLowerCase().split(/[\s\-_()/]+/).filter(w=>w.length>=4&&!['fund','growth','strategy','scheme','direct','plan','series'].includes(w));
+      if(words[0]) stmtHouses.add(words[0]); // primary manager keyword
+      if(words[1]) stmtHouses.add(words[1]); // secondary (e.g. "optimus" for Kotak Optimus)
     }
   });
   // Also grab folios from DB holdings that were matched
@@ -2094,7 +2097,7 @@ function renderHqDiff(extraction, fileName){
     const fd = _familyData[famName];
     if(!fd?.holdings) return;
     fd.holdings.forEach(h=>{
-      if(matchedExistingIds.has(h.id)) return; // already matched
+      if(matchedExistingIds.has(h)) return; // already matched (object ref)
       const hFolio = String(h.folio||'').trim();
 
       // Check 1: folio overlap (reliable for any type)

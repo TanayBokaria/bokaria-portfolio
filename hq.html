@@ -1849,9 +1849,11 @@ async function callHqGemini(userInput){
     showHqRouting(result.family);
   }
 
+  // Store only response_text in thread history to prevent token accumulation
+  const _threadSummary = result.response_text || result.clarification_question || '';
   _aiThread.push({role:'user', parts:[{text:userInput}]});
-  _aiThread.push({role:'model', parts:[{text:JSON.stringify(result)}]});
-  if(_aiThread.length > 12) _aiThread = _aiThread.slice(-12);
+  _aiThread.push({role:'model', parts:[{text:_threadSummary}]});
+  if(_aiThread.length > 8) _aiThread = _aiThread.slice(-8); // 4 turns max
 
   return result;
 }

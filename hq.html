@@ -2574,7 +2574,7 @@ async function applyHqDiff(cardEl){
     ...diff.duplicate.map(i=>i._detectedFamily)
   ].filter(Boolean));
   affectedFamilies.forEach(famName=>recomputeFamilyAlerts(famName));
-  if(applied>0){renderAllFamilyCards();renderActionQueue();updateTotalBar();}
+  if(applied>0){renderAllFamilyCards();renderActionQueue();updateTotalBar();renderAuditBanner();}
 
   // Final state
   progFill.style.width='100%';

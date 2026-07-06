@@ -948,7 +948,9 @@ async function loadFamilyData(family){
     // [0]AsOf [1]Investor [2]OrigName [3]CurrName [4]Type [5]Category
     // [6]Folio [7]Invested [8]CurrentValue [9]Gain [10]GainPct [11]CAGR [12]NAV [13]NAVDate
     // [14]PurchaseDate [15]HoldingPeriod [16]SchemeCode [17]Currency [18]USDValue [19]Units/Qty
-    const holdings = rows.map(row=>({
+    const holdings = rows.map((row,ri)=>({
+      id:           parseInt(row[0])||0,  // col A — needed by hqWritePmsAifSoaDates holdingId match
+      _rowNum:      ri+2,                 // 1-based Sheet row (header=row1, data starts at row2); immutable reference for Sheets writes
       fund:         row[2]||row[3]||'',
       originalName: row[2]||'',
       currentName:  row[3]||'',

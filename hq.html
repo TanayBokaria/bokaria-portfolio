@@ -726,6 +726,7 @@ let _geminiIdx    = 0;
 let _familyData   = {}; // { Prashant: { holdings, totalValue, totalInvested, alerts, loaded } }
 let _aiThread     = [];  // conversation history
 let _aiFiles      = [];  // accumulated file store
+let _hqPwdPendingFile = null;  // password-protected PDF waiting for password
 let _routedFamily = null; // detected family context for current session
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2289,7 +2290,19 @@ async function readFileText(file){
   if(ext==='pdf'){
     const pdfjsLib=window.pdfjsLib||window['pdfjs-dist/build/pdf'];
     if(pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    const ab=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+    const ab=await file.arrayBuffer();
+    const pdfOpts={data:ab};
+    if(file._password) pdfOpts.password=file._password;
+    let pdf;
+    try{ pdf=await pdfjsLib.getDocument(pdfOpts).promise; }
+    catch(e){
+      if(e?.name==='PasswordException'||e?.message?.toLowerCase().includes('password')){
+        const err=new Error(`${file.name} — No password given`);
+        err.isPasswordError=true; err.file=file;
+        throw err;
+      }
+      throw e;
+    }
     let text=''; for(let i=1;i<=pdf.numPages;i++){ const p=await pdf.getPage(i); const c=await p.getTextContent(); text+=c.items.map(x=>x.str).join(' ')+'\n'; }
     return text;
   }
@@ -3014,7 +3027,14 @@ async function hqSend(prefillText){
           `<div class="hq-thinking">Reading <strong>${file.name}</strong>…<div class="hq-dots"><span></span><span></span><span></span></div></div>`;
         let content;
         try{ content=await readFileText(file); }
-        catch(e){ hqAppendMsg('error',`⚠ ${file.name} — ${e.message}`); continue; }
+        catch(e){
+          if(e.isPasswordError){
+            _hqPwdPendingFile=file;
+            hqAppendMsg('error',`🔒 <strong>${file.name}</strong> is password-protected. Please type the password below and press Send.`);
+            continue;
+          }
+          hqAppendMsg('error',`⚠ ${file.name} — ${e.message}`); continue;
+        }
         if(thinkEl) thinkEl.querySelector('.hq-bubble').innerHTML=
           `<div class="hq-thinking">Extracting from <strong>${file.name}</strong>…<div class="hq-dots"><span></span><span></span><span></span></div></div>`;
         // AB Equity CSV — detect by filename/header, parse directly (no Gemini)
@@ -3033,6 +3053,44 @@ async function hqSend(prefillText){
       }
     }finally{ if(thinkEl) thinkEl.remove(); if(sendBtn) sendBtn.disabled=false; inputEl?.focus(); }
     return;
+  }
+
+  // Password-protected file pending — check if user typed the password
+  if(_hqPwdPendingFile && userText){
+    const pwdMatch = userText.match(/(?:password(?:\s+is)?|pwd|pass(?:word)?)[:\s]+([\S]+)/i)
+                  || userText.match(/^([\S]{4,20})$/);  // bare short string = likely a password
+    const pwd = pwdMatch?.[1] || userText.trim();
+    if(pwd){
+      const pendingFile = _hqPwdPendingFile;
+      _hqPwdPendingFile = null;
+      pendingFile._password = pwd;
+      hqAppendMsg('user', `🔑 Password provided — retrying ${pendingFile.name}…`);
+      const thinkEl2 = showHqThinking();
+      try{
+        let content2;
+        try{ content2 = await readFileText(pendingFile); }
+        catch(e2){
+          if(thinkEl2) thinkEl2.remove();
+          if(e2.isPasswordError){
+            _hqPwdPendingFile = pendingFile;
+            hqAppendMsg('error','🔒 Incorrect password — please try again.');
+          } else {
+            hqAppendMsg('error',`⚠ ${pendingFile.name} — ${e2.message}`);
+          }
+          return;
+        }
+        if(thinkEl2) thinkEl2.querySelector('.hq-bubble').innerHTML=
+          `<div class="hq-thinking">Extracting from <strong>${pendingFile.name}</strong>…<div class="hq-dots"><span></span><span></span><span></span></div></div>`;
+        let extraction2;
+        try{ extraction2 = await extractAndDiff(pendingFile, 'Review and update portfolio'); }
+        catch(e2){ if(thinkEl2) thinkEl2.remove(); hqAppendMsg('error',`⚠ ${pendingFile.name} — ${e2.message}`); return; }
+        if(thinkEl2) thinkEl2.remove();
+        if(extraction2.family_detected && !_routedFamily){ _routedFamily=extraction2.family_detected; showHqRouting(extraction2.family_detected); }
+        renderHqDiff(extraction2, pendingFile.name);
+      }catch(e2){ if(thinkEl2) thinkEl2.remove(); hqAppendMsg('error',`⚠ ${e2.message}`); }
+      if(inputEl) inputEl.value='';
+      return;
+    }
   }
 
   if(!userText) return;

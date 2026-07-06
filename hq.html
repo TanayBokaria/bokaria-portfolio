@@ -2828,22 +2828,23 @@ async function applyHqDiff(cardEl){
   }
 
   // Update soaDate (col N) for duplicates that have an as_of_date in the statement
+  // FIX: use _rowNum (stored at parse time) instead of object reference findIndex(),
+  // which silently returns -1 after any _familyData rebuild (e.g. Refresh All NAVs).
   for(const [i,item] of diff.duplicate.entries()){
     const chk=cardEl.querySelector(`#hd_dup_${i}`); if(!chk?.checked){skipped++;continue;}
     if(!item.as_of_date||!item._existing) continue; // no date to update
     const famName=item._detectedFamily; const famCfg=getFamilyConfig(famName);
     if(!famCfg) continue;
-    const fd=_familyData[famCfg.name];
-    if(!fd) continue;
-    const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2;
-    if(rowIdx<2) continue;
-    // Write col N (index 14, 1-based) = soaDate
+    const rowIdx=item._existing?._rowNum; // immutable row number stored at loadFamilyData parse time
+    if(!rowIdx||rowIdx<2) continue;       // guard: _rowNum missing or would overwrite header
+    // Write col N = soaDate for this PMS/AIF holding
     try{
       await fetchWithTimeout(
         `https://sheets.googleapis.com/v4/spreadsheets/${famCfg.sheetId}/values/portfolio_snapshot!N${rowIdx}?valueInputOption=RAW`,
         {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
          body:JSON.stringify({values:[[item.as_of_date]]})});
-      item._existing.navDate=item.as_of_date; // update local cache
+      item._existing.navDate=item.as_of_date; // update HQ in-memory cache so staleness panel clears
+      applied++;
     }catch(e){ /* non-critical, ignore */ }
   }
   skipped += diff.duplicate.filter((_,i)=>!cardEl.querySelector(`#hd_dup_${i}`)?.checked).length;

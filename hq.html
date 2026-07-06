@@ -2906,7 +2906,7 @@ async function applyHqDiff(cardEl){
                 const rowIdx=item._existing?._rowNum; if(!rowIdx||rowIdx<2) continue;
                 try{
                   await fetchWithTimeout(
-                    'https://sheets.googleapis.com/v4/spreadsheets/'+fam.sheetId+'/values/portfolio_snapshot!N'+rowIdx+'?valueInputOption=USER_ENTERED',
+                    'https://sheets.googleapis.com/v4/spreadsheets/'+fam.sheetId+'/values/portfolio_snapshot!N'+rowIdx+'?valueInputOption=RAW',
                     {method:'PUT',headers:{Authorization:'Bearer '+_token,'Content-Type':'application/json'},body:JSON.stringify({values:[[dateVal]]})});
                   item._existing.navDate=dateVal;
                 }catch(e){}

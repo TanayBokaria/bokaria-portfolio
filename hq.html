@@ -3353,7 +3353,7 @@ async function hqRefreshAllNAVs(){
       // Write all 20 cols (A:T) — col T has MF units (from original read) and AB qty
 
       const res = await fetchWithTimeout(
-        `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/portfolio_snapshot!A1?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/portfolio_snapshot!A1?valueInputOption=RAW`,
         {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
          body:JSON.stringify({values:[headers,...allSnapshotRows]})},20000
       );

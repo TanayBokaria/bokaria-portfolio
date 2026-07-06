@@ -3363,23 +3363,45 @@ async function hqRefreshAllNAVs(){
       setRefreshBar(f.name, 100, 'done');
       setRefreshStatus(f.name,`✓ ${updated} updated`,'var(--green)');
 
-      // Update in-memory family data
+      // Rebuild in-memory precisely from the rows just written — avoids folio-match
+      // ambiguity (e.g. all NYSE holdings for same investor+platform share the same
+      // folio string, so the old find() always returned the first row, corrupting totals).
       if(_familyData[f.name]){
-        _familyData[f.name].holdings.forEach(h=>{
-          const match = newRows.find(r=>r[6]===h.folio&&r[1]===h.investor);
-          if(match) h.value = parseFloat(match[8])||h.value;
-        });
-        // Remove stale in-memory AB holdings and add fresh ones
-        _familyData[f.name].holdings = _familyData[f.name].holdings.filter(h=>h.type!=='AB Equity');
-        freshABRows.forEach(r=>{
-          _familyData[f.name].holdings.push({
-            fund:r[2]||'', investor:r[1]||'', type:'AB Equity',
-            folio:r[6]||'', invested:parseFloat(r[7])||0,
-            value:parseFloat(r[8])||0, asOfDate:_ds(r[13])||'',
-          });
-        });
-        _familyData[f.name].totalValue = _familyData[f.name].holdings.reduce((s,h)=>s+(h.value||0),0);
+        const newHoldings = allSnapshotRows.map((row,ri)=>({
+          id:           parseInt(row[0])||0,
+          _rowNum:      ri+2,
+          fund:         String(row[2]||row[3]||''),
+          originalName: String(row[2]||''),
+          currentName:  String(row[3]||''),
+          investor:     String(row[1]||''),
+          type:         String(row[4]||'MF'),
+          category:     String(row[5]||''),
+          folio:        String(row[6]||''),
+          invested:     parseFloat(row[7])||0,
+          value:        parseFloat(row[8])||0,
+          gain:         parseFloat(row[9])||0,
+          gainPct:      String(row[10]||''),
+          cagr:         parseFloat(row[11])||0,
+          nav:          parseFloat(row[12])||0,
+          navDate:      _ds(row[13])||'',
+          purchaseDate: _ds(row[14])||'',
+          schemeCode:   String(row[16]||''),
+          currency:     String(row[17]||'INR'),
+          usdValue:     parseFloat(row[18])||0,
+          units:        parseFloat(row[19])||0,
+          asOfDate:     _ds(row[13])||'',
+        })).filter(h=>h.fund&&h.investor);
+        _familyData[f.name].holdings     = newHoldings;
+        _familyData[f.name].totalValue   = newHoldings.reduce((s,h)=>s+(h.value||0),0);
+        _familyData[f.name].totalInvested= newHoldings.reduce((s,h)=>s+(h.invested||0),0);
       }
+      // Signal individual dashboards: write nav_refresh_ts to this family's config tab
+      // (row 30 is the dedicated HQ-signal row — individual dashboards poll it every 90s)
+      fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${f.sheetId}/values/config!A30:B30?valueInputOption=RAW`,
+        {method:'PUT',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+         body:JSON.stringify({values:[['nav_refresh_ts', Date.now()]]})}, 6000
+      ).catch(()=>{}); // non-critical
     }catch(e){
       setRefreshBar(f.name,100,'err');
       setRefreshStatus(f.name,`⚠ Write failed: ${e.message}`,'var(--red)');

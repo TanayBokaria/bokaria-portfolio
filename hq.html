@@ -934,7 +934,7 @@ async function loadFamilyData(family){
         Object.assign(r, {ok:true}); 
         // Re-process with retried data
         const retryRows = (data2.values||[]).slice(1);
-        _familyData[family.name] = { loaded:true, error:null, holdings: retryRows.length > 0 ? retryRows.map(row=>({fund:row[2]||row[3]||'',originalName:row[2]||'',currentName:row[3]||'',investor:row[1]||'',type:row[4]||'MF',category:row[5]||'',folio:row[6]||'',invested:parseFloat(row[7])||0,value:parseFloat(row[8])||0,gain:parseFloat(row[9])||0,gainPct:row[10]||'',nav:parseFloat(row[12])||0,navDate:_ds(row[13])||'',purchaseDate:_ds(row[14])||'',schemeCode:String(row[16]||''),currency:row[17]||'INR',usdValue:parseFloat(row[18])||0,units:parseFloat(row[19])||0,asOfDate:_ds(row[13])||''})).filter(h=>h.fund&&h.investor) : [] };
+        _familyData[family.name] = { loaded:true, error:null, holdings: retryRows.length > 0 ? retryRows.map((row,ri)=>({id:parseInt(row[0])||0,_rowNum:ri+2,fund:row[2]||row[3]||'',originalName:row[2]||'',currentName:row[3]||'',investor:row[1]||'',type:row[4]||'MF',category:row[5]||'',folio:row[6]||'',invested:parseFloat(row[7])||0,value:parseFloat(row[8])||0,gain:parseFloat(row[9])||0,gainPct:row[10]||'',nav:parseFloat(row[12])||0,navDate:_ds(row[13])||'',purchaseDate:_ds(row[14])||'',schemeCode:String(row[16]||''),currency:row[17]||'INR',usdValue:parseFloat(row[18])||0,units:parseFloat(row[19])||0,asOfDate:_ds(row[13])||''})).filter(h=>h.fund&&h.investor) : [] };
         renderAllFamilyCards(); renderActionQueue(); updateTotalBar();
         return;
       }
@@ -2762,8 +2762,8 @@ async function applyHqDiff(cardEl){
     if(!fam){errors.push(`Unknown family for ${item.fund_name}`);failed++;done++;setProgress(`Failed: ${item.fund_name}`);continue;}
     setProgress(`Saving ${item._existing?.fund||item.fund_name}…`);
     const fd=_familyData[fam.name];
-    const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2;
-    if(rowIdx<2){errors.push(`Row not found for ${item._existing?.fund||item.fund_name}`);failed++;done++;continue;} // findIndex=-1 → rowIdx=1 → would overwrite header
+    const rowIdx=item._existing?._rowNum;
+    if(!rowIdx||rowIdx<2){errors.push(`Row not found for ${item._existing?.fund||item.fund_name} — refresh page and try again`);failed++;done++;continue;} // findIndex=-1 → rowIdx=1 → would overwrite header
     // Write to col I (Current Value), J (Gain), K (Return%) — cols are 1-based I=9
     const gain   = (item._proposedValue||0) - (item._existing?.invested||0);
     const retPct = item._existing?.invested > 0 ? ((gain/item._existing.invested)*100).toFixed(2)+'%' : '—';
@@ -2853,7 +2853,8 @@ async function applyHqDiff(cardEl){
     ...diff.duplicate.map(i=>i._detectedFamily)
   ].filter(Boolean));
   affectedFamilies.forEach(famName=>recomputeFamilyAlerts(famName));
-  if(applied>0){renderAllFamilyCards();renderActionQueue();updateTotalBar();renderAuditBanner();}
+  // Always re-render HQ cards after any apply (even partial), so totals stay in sync
+  renderAllFamilyCards(); renderActionQueue(); updateTotalBar(); renderAuditBanner();
 
   // Final state
   progFill.style.width='100%';
@@ -2899,7 +2900,7 @@ async function applyHqDiff(cardEl){
               for(const item of itemsToUpdate){
                 const fam=getFamilyConfig(item._detectedFamily); if(!fam) continue;
                 const fd=_familyData[fam.name]; if(!fd) continue;
-                const rowIdx=fd.holdings.findIndex(h=>h===item._existing)+2; if(rowIdx<2) continue;
+                const rowIdx=item._existing?._rowNum; if(!rowIdx||rowIdx<2) continue;
                 try{
                   await fetchWithTimeout(
                     'https://sheets.googleapis.com/v4/spreadsheets/'+fam.sheetId+'/values/portfolio_snapshot!N'+rowIdx+'?valueInputOption=USER_ENTERED',

@@ -3447,7 +3447,6 @@ async function checkFamilyHealth(family){
   // We don't store timestamp in our parsed structure — check asOfDate
   const stale = d.holdings.filter(h=>{
     if(!h.asOfDate || h.asOfDate==='—') return false;
-    // Try to parse date
     try{
       const d2 = new Date(h.asOfDate);
       if(isNaN(d2.getTime())) return false;
@@ -3456,7 +3455,15 @@ async function checkFamilyHealth(family){
     }catch{return false;}
   });
   if(stale.length > 3){
-    issues.push({level:'warn', msg:`${stale.length} holdings with values >60 days old`});
+    // Distinguish MF (unexpected stale) from PMS/AIF (stale until SOA uploaded)
+    const staleMF    = stale.filter(h=>h.type==='MF').length;
+    const stalePMSAIF = stale.filter(h=>h.type==='PMS'||h.type==='AIF').length;
+    if(staleMF > 3){
+      issues.push({level:'warn', msg:`${staleMF} MF holdings not updated in >60 days — check NAV refresh`});
+    }
+    if(stalePMSAIF > 0){
+      issues.push({level:'info', msg:`${stalePMSAIF} PMS/AIF holdings awaiting SOA upload (last update >60d ago)`});
+    }
   }
 
   return issues;

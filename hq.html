@@ -884,9 +884,9 @@ async function hqLoadAll(){
   renderFamilyCardSkeletons();
   await loadGeminiKeys();
 
-  // Load all active families in parallel
+  // Load families with stagger to avoid 429 rate limit
   const active = FAMILIES.filter(f=>!f.comingSoon);
-  await Promise.allSettled(active.map(f => loadFamilyData(f)));
+  await staggeredFamilyLoad(active, loadFamilyData, 1000);
   renderAllFamilyCards();
   renderActionQueue();
   updateTotalBar();
@@ -895,6 +895,17 @@ async function hqLoadAll(){
   document.getElementById('hqHeaderActions').style.display = 'flex';
   // Auto-run health checks
   runHqHealthChecks();
+}
+
+// Stagger parallel family reads to avoid Google Sheets API 429 rate limit
+async function staggeredFamilyLoad(families, loadFn, delayMs=1200){
+  const results = [];
+  for(let i=0; i<families.length; i++){
+    if(i > 0) await new Promise(r=>setTimeout(r, delayMs));
+    try{ results.push(await loadFn(families[i])); }
+    catch(e){ results.push({status:'rejected',reason:e}); }
+  }
+  return results;
 }
 
 async function loadFamilyData(family){
@@ -910,6 +921,20 @@ async function loadFamilyData(family){
         localStorage.removeItem(LS_TOKEN);
         hqSetConnected(false);
         hqShowSessionExpired();
+        return;
+      }
+      if(r.status === 429){
+        // Rate limited — wait 3s and retry once
+        await new Promise(res=>setTimeout(res, 3000));
+        const r2 = await fetchWithTimeout(snapUrl,{headers:{Authorization:`Bearer ${_token}`}});
+        if(!r2.ok){ _familyData[family.name]={loaded:true,error:`HTTP ${r2.status} (after retry)`,holdings:[]}; return; }
+        const data2 = await r2.json();
+        // Continue with retried data — fall through using same variable name trick
+        Object.assign(r, {ok:true}); 
+        // Re-process with retried data
+        const retryRows = (data2.values||[]).slice(1);
+        _familyData[family.name] = { loaded:true, error:null, holdings: retryRows.length > 0 ? retryRows.map(row=>({fund:row[2]||row[3]||'',originalName:row[2]||'',currentName:row[3]||'',investor:row[1]||'',type:row[4]||'MF',category:row[5]||'',folio:row[6]||'',invested:parseFloat(row[7])||0,value:parseFloat(row[8])||0,gain:parseFloat(row[9])||0,gainPct:row[10]||'',nav:parseFloat(row[12])||0,navDate:_ds(row[13])||'',purchaseDate:_ds(row[14])||'',schemeCode:String(row[16]||''),currency:row[17]||'INR',usdValue:parseFloat(row[18])||0,units:parseFloat(row[19])||0,asOfDate:_ds(row[13])||''})).filter(h=>h.fund&&h.investor) : [] };
+        renderAllFamilyCards(); renderActionQueue(); updateTotalBar();
         return;
       }
       _familyData[family.name]={loaded:true, error: `HTTP ${r.status}`, holdings:[]};
@@ -3327,7 +3352,7 @@ async function hqReloadAll(){
   const btn = document.getElementById('hqReloadBtn');
   if(btn){ btn.classList.add('loading'); btn.textContent = '↻ Reloading…'; btn.disabled = true; }
   const active = FAMILIES.filter(f=>!f.comingSoon);
-  await Promise.allSettled(active.map(f => loadFamilyData(f)));
+  await staggeredFamilyLoad(active, loadFamilyData, 1200); // 1.2s gap avoids 429 after NAV refresh
   renderAllFamilyCards();
   renderActionQueue();
   updateTotalBar();

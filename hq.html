@@ -3224,9 +3224,16 @@ async function hqSend(prefillText){
     hqAppendMsg('user',`📎 ${displayNames}${userText?'<br>'+userText:''}`);
     _aiFiles=[]; renderHqFileChips();
 
+    // Pre-extract password from userText — handles "here's the file, password is XXXX" in one message
+    const _inlinePwd = userText
+      ? ((userText.match(/(?:password(?:\s+is)?|pwd|pass(?:word)?)[:\s]+([\S]+)/i)||[])[1]
+         || (userText.match(/^([\S]{4,20})$/)||[])[1] || null)
+      : null;
+
     const thinkEl=showHqThinking();
     try{
       for(const file of files){
+        if(_inlinePwd && !file._password) file._password = _inlinePwd; // use same-message password on first attempt
         if(thinkEl) thinkEl.querySelector('.hq-bubble').innerHTML=
           `<div class="hq-thinking">Reading <strong>${file.name}</strong>…<div class="hq-dots"><span></span><span></span><span></span></div></div>`;
         let content;

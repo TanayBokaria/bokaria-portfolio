@@ -1326,7 +1326,7 @@ function runStalenessAudit(){
       // ── Near-zero value (any type): likely redeemed ──
       if(value<=100 && invested>10000){
         flagged.push({key,family:f.name,color:f.color,investor:h.investor,fund,type,
-          value,invested,daysSince:null,reason:'near_zero',
+          value,invested,daysSince:null,reason:'near_zero',folio:h.folio||'',
           label:'₹0 or near-zero value — possibly fully redeemed?',dot:'red'});
         return;
       }
@@ -1372,7 +1372,7 @@ function runStalenessAudit(){
 
       if(daysSince>=threshold){
         flagged.push({key,family:f.name,color:f.color,investor:h.investor,fund,type,
-          value,invested,daysSince,reason:'stale',dot:'amber',
+          value,invested,daysSince,reason:'stale',dot:'amber',folio:h.folio||'',
           label: daysSince>=9999
             ? 'No update date on record'
             : `Not updated in ${daysSince} days (${Math.round(daysSince/30)}mo)`
@@ -1436,7 +1436,7 @@ function renderAuditBanner(){
     html += `<div class="hq-audit-section-title">🕐 Not updated within threshold (${stales.length})</div>`;
     html += stales.map((h,i)=>_row(h,zeros.length+i)).join('');
   }
-  html += `<div style="padding:8px 16px 10px;font-size:11px;color:var(--text-dim)">"Still active" snoozes for 90 days. "Redeemed" removes from audit permanently — delete from your dashboard manually.</div>`;
+  html += `<div style="padding:8px 16px 10px;font-size:11px;color:var(--text-dim)">"Still active" snoozes for 90 days. "Redeemed" opens a confirmation — you can optionally delete the holding from the family dashboard automatically.</div>`;
   html += '</div>';
   body.innerHTML = html;
 
@@ -1474,17 +1474,116 @@ function auditNeedsUpdate(famName, key, idx){
 }
 
 function auditRedeemed(key, fundName, idx){
-  // Snooze permanently (10 years) + show confirmation
-  if(!confirm(`Mark "${fundName}" as redeemed? It will be removed from the audit permanently.\n\nRemember to also delete it from the family dashboard.`)) return;
+  const item = (window._auditFlagged||[])[idx];
+  if(!item){ hqAppendMsg('error','⚠ Audit item not found — please refresh the page.'); return; }
+  _showRedemptionConfirmCard(item, idx, key);
+}
+
+// ── Redemption confirmation card ───────────────────────────────────────────────
+// Shows a styled card in the AI bar with two choices: audit-only or audit + delete from dashboard.
+function _showRedemptionConfirmCard(item, idx, key){
+  const fam = getFamilyConfig(item.family);
+  const _fmtCr = v=>{const n=parseFloat(v)||0;return n>=1e7?'₹'+(n/1e7).toFixed(2)+'Cr':'₹'+(n/1e5).toFixed(2)+'L';};
+
+  const thread = document.getElementById('hqThread');
+  if(!thread) return;
+
+  const card = document.createElement('div');
+  card.className = 'hq-bubble hq-confirm-card hq-redemption-card';
+  card.style.maxWidth = '92%';
+  card.innerHTML = `
+    <div class="hq-confirm-label" style="color:var(--red)">🔴 Confirm Redemption</div>
+    ${fam ? `<div class="hq-confirm-family" style="background:${fam.color}22;color:${fam.color}">${fam.name} Family</div>` : ''}
+    <div style="padding:10px 14px;display:grid;grid-template-columns:1fr auto;gap:4px 16px;font-size:12px">
+      <div>
+        <div style="font-weight:600;font-size:13px;color:var(--text)">${item.fund}</div>
+        <div style="color:var(--text-dim);margin-top:3px">${item.investor} · ${item.type}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:600;font-size:13px">${_fmtCr(item.value)}</div>
+        <div style="color:var(--text-dim);font-size:11px">current value</div>
+      </div>
+    </div>
+    <div style="padding:0 14px 10px;font-size:12px;color:var(--text-dim)">
+      Also delete this holding from the <strong>${item.family}</strong> family dashboard?
+      If deleted, it will be removed automatically the next time the dashboard syncs.
+    </div>
+    <div class="hq-confirm-actions" style="gap:8px">
+      <button class="hq-confirm-cancel" onclick="this.closest('.hq-redemption-card').closest('.hq-msg').remove()">Cancel</button>
+      <button class="hq-confirm-ok" style="background:var(--surface3);color:var(--text)" 
+        data-idx="${idx}" data-key="${key.replace(/'/g,"\\'")}" data-del="0"
+        onclick="_executeRedemption(this)">Audit only</button>
+      <button class="hq-confirm-ok"
+        data-idx="${idx}" data-key="${key.replace(/'/g,"\\'")}" data-del="1"
+        onclick="_executeRedemption(this)">Delete from dashboard too</button>
+    </div>
+    <div class="hq-confirm-saving-row"><div class="hq-spinner"></div><span>Saving…</span></div>`;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'hq-msg ai';
+  wrap.appendChild(card);
+  thread.appendChild(wrap);
+  thread.scrollTop = thread.scrollHeight;
+  document.getElementById('hqThreadWrap').classList.add('open');
+  // Scroll audit banner into view so user sees context
+  document.getElementById('hqAuditBanner')?.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function _executeRedemption(btn){
+  const card     = btn.closest('.hq-redemption-card');
+  const idx      = parseInt(btn.dataset.idx);
+  const key      = btn.dataset.key;
+  const withDel  = btn.dataset.del === '1';
+  const item     = (window._auditFlagged||[])[idx];
+  if(!item || !key){ hqAppendMsg('error','⚠ Redemption data lost — please try again.'); return; }
+
+  // Disable all buttons
+  card.querySelectorAll('button').forEach(b=>{ b.disabled=true; });
+  card.classList.add('saving');
+
+  // 1. Permanently snooze (10-year)
   const map = _auditGetSnooze();
   const until = new Date(); until.setFullYear(until.getFullYear()+10);
   map[key] = until.toISOString();
   _auditSaveSnooze(map);
+
+  // 2. Optionally write to the family's Sheets redemptions tab
+  let sheetsOk = true;
+  if(withDel){
+    const fam = getFamilyConfig(item.family);
+    if(fam?.sheetId && _token){
+      const row = [[item.fund, item.investor, new Date().toISOString().slice(0,10), item.folio||'', item.family]];
+      try{
+        const r = await fetchWithTimeout(
+          `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/redemptions!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+          {method:'POST', headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+           body: JSON.stringify({values:row})}, 8000);
+        if(!r.ok) sheetsOk = false;
+      }catch(e){ sheetsOk = false; }
+    } else { sheetsOk = false; }
+  }
+
+  // 3. Remove from audit panel
   document.getElementById(`hq_audit_row_${idx}`)?.remove();
   const remaining = document.querySelectorAll('.hq-audit-row').length;
-  if(!remaining){ document.getElementById('hqAuditBanner').style.display='none'; return; }
-  document.getElementById('hqAuditCount').textContent = remaining;
-  document.getElementById('hqAuditPlural').textContent = remaining===1?'':'s';
+  if(!remaining) document.getElementById('hqAuditBanner').style.display='none';
+  else {
+    document.getElementById('hqAuditCount').textContent = remaining;
+    document.getElementById('hqAuditPlural').textContent = remaining===1?'':'s';
+  }
+
+  // 4. Replace card with confirmation
+  const msg = withDel
+    ? sheetsOk
+      ? `✓ <strong>${item.fund}</strong> marked as redeemed and queued for deletion from the ${item.family} dashboard. It will be removed on next sync.`
+      : `✓ <strong>${item.fund}</strong> marked as redeemed in audit. ⚠ Could not write to Sheets — delete the holding from the ${item.family} dashboard manually.`
+    : `✓ <strong>${item.fund}</strong> marked as redeemed in the audit permanently.`;
+  card.closest('.hq-msg').replaceWith((() => {
+    const d = document.createElement('div');
+    d.className = 'hq-msg ai';
+    d.innerHTML = `<div class="hq-bubble" style="font-size:12px">${msg}</div>`;
+    return d;
+  })());
 }
 
 function recomputeFamilyAlerts(famName){

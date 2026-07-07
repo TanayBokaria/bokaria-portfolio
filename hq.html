@@ -724,6 +724,39 @@ let _clientId     = localStorage.getItem(LS_CLIENT) ||
 let _geminiKeys   = [];
 let _geminiIdx    = 0;
 let _familyData   = {}; // { Prashant: { holdings, totalValue, totalInvested, alerts, loaded } }
+const _familyLoadTs = {}; // tracks when each family's data was last loaded from Sheets (epoch ms)
+
+// ── HQ snapshot poll: detects when a family dashboard writes a new portfolio_snapshot ──────
+// Individual dashboards write snapshot_ts to config!A31:B31 after each successful writePortfolioSnapshot.
+// HQ polls this every 90s per family; reloads that family's data when a newer timestamp is found.
+// This keeps HQ in sync within 90 seconds of any family running Refresh NAVs.
+let _hqSnapshotPollTimer = null;
+async function _hqSnapshotPollOnce(){
+  if(!_token) return;
+  for(const fam of FAMILIES.filter(f=>!f.comingSoon)){
+    try{
+      const r = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/config!A31:B31`,
+        {headers:{Authorization:`Bearer ${_token}`}}, 6000);
+      if(!r.ok) continue;
+      const d = await r.json();
+      const row = (d.values||[])[0]||[];
+      if(String(row[0]||'') !== 'snapshot_ts') continue;
+      const snapTs = parseInt(row[1])||0;
+      const lastLoad = _familyLoadTs[fam.name] || 0;
+      if(snapTs > lastLoad){
+        // Dashboard wrote a newer snapshot — reload this family's data
+        console.log(`[HQ-sync] ${fam.name} snapshot updated at ${new Date(snapTs).toLocaleTimeString()} — reloading`);
+        await loadFamilyData(fam);
+        _familyLoadTs[fam.name] = Date.now();
+        recomputeFamilyAlerts(fam.name);
+        renderAllFamilyCards(); updateTotalBar(); renderAuditBanner();
+      }
+    }catch(e){ /* non-critical poll — ignore errors */ }
+  }
+}
+function startHqSnapshotPoll(){ _hqSnapshotPollTimer = setInterval(_hqSnapshotPollOnce, 90_000); }
+function stopHqSnapshotPoll(){ if(_hqSnapshotPollTimer){ clearInterval(_hqSnapshotPollTimer); _hqSnapshotPollTimer=null; } }
 let _aiThread     = [];  // conversation history
 let _aiFiles      = [];  // accumulated file store
 let _hqPwdPendingFile = null;  // password-protected PDF waiting for password
@@ -888,14 +921,17 @@ async function hqLoadAll(){
   // Load families with stagger to avoid 429 rate limit
   const active = FAMILIES.filter(f=>!f.comingSoon);
   await staggeredFamilyLoad(active, loadFamilyData, 1000);
+
+  // Record load timestamps so the snapshot poll knows what's "new"
+  active.forEach(f=>{ _familyLoadTs[f.name] = Date.now(); });
+
   renderAllFamilyCards();
   renderActionQueue();
   updateTotalBar();
-  renderAuditBanner(); // staleness audit — runs after all family data loaded
-  // Show reload + report buttons now that we're connected
+  renderAuditBanner();
   document.getElementById('hqHeaderActions').style.display = 'flex';
-  // Auto-run health checks
   runHqHealthChecks();
+  startHqSnapshotPoll(); // begin polling for dashboard→HQ snapshot updates
 }
 
 // Stagger parallel family reads to avoid Google Sheets API 429 rate limit
@@ -3172,6 +3208,7 @@ async function runHqScopedRefresh(scope, progressCtrl){
     if(progressCtrl) progressCtrl.update(0, 'Reading latest portfolio data from Sheets…');
     await Promise.allSettled(active.map(async f=>{
       await loadFamilyData(f);
+      _familyLoadTs[f.name] = Date.now(); // update so snapshot poll doesn't immediately re-reload
       done++;
       if(progressCtrl) progressCtrl.update(done, `Synced ${done}/${active.length} families`);
     }));

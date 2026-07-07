@@ -2835,31 +2835,53 @@ async function applyABImport(key, cardEl){
 }
 
 async function hqWritePmsAifSoaDates(pmsUpdates, token){
+  // Writes currentValue + soaDate to pms_aif_values for each PMS/AIF holding.
+  // Matches by fund name + investor — the holdingId field is a Sheets date serial and unreliable.
+  // UPSERT: updates the row if found; appends a new row if not.
   if(!pmsUpdates.length || !token) return;
-  // Group by sheetId for efficient reads (one read per family sheet)
+
+  // Group by sheetId (one read per family sheet)
   const bySheet = {};
-  for(const {sheetId, holdingId, value, soaDate} of pmsUpdates){
-    if(!sheetId||!holdingId||!soaDate) continue;
-    (bySheet[sheetId]||(bySheet[sheetId]=[])).push({holdingId,value,soaDate});
+  for(const {sheetId, fund, investor, value, soaDate} of pmsUpdates){
+    if(!sheetId || !fund || !investor) continue;
+    (bySheet[sheetId]||(bySheet[sheetId]=[])).push({fund, investor, value, soaDate});
   }
+
   for(const [sheetId, items] of Object.entries(bySheet)){
     try{
-      const rr=await fetchWithTimeout(
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!A2:A500`,
-        {headers:{Authorization:`Bearer ${token}`}},8000);
+      // Read id + fund name + col_c + investor from pms_aif_values (cols A–F)
+      const rr = await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!A2:F500`,
+        {headers:{Authorization:`Bearer ${token}`}}, 8000);
       if(!rr.ok) continue;
-      const rows=((await rr.json()).values)||[];
-      for(const {holdingId,value,soaDate} of items){
-        const ri=rows.findIndex(r=>parseInt(r[0])===holdingId);
-        if(ri<0) continue;
-        const sr=ri+2; // header offset + 1-based
-        // Write E:F = [currentValue, soaDate] — non-critical, ignore failures
-        await fetchWithTimeout(
-          `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!E${sr}:F${sr}?valueInputOption=RAW`,
-          {method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
-           body:JSON.stringify({values:[[String(value),soaDate]]})},6000).catch(()=>{});
+      const rows = ((await rr.json()).values) || [];
+
+      for(const {fund, investor, value, soaDate} of items){
+        // Match by fund name (col B = r[1]) + investor (col D = r[3])
+        const ri = rows.findIndex(r =>
+          String(r[1]||'').trim().toLowerCase() === fund.trim().toLowerCase() &&
+          String(r[3]||'').trim().toLowerCase() === investor.trim().toLowerCase()
+        );
+
+        if(ri >= 0){
+          // Row found → update col E (value) + col F (soaDate) in place
+          const sr = ri + 2; // 1-based, +1 for header
+          await fetchWithTimeout(
+            `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!E${sr}:F${sr}?valueInputOption=RAW`,
+            {method:'PUT', headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+             body: JSON.stringify({values:[[String(value), soaDate]]})}, 6000
+          ).catch(()=>{}); // non-critical
+        } else {
+          // Row not found → APPEND new row so future loads pick up the value
+          // Structure matches what saveSinglePMSValue writes: [id, fund, '', investor, value, soaDate]
+          await fetchWithTimeout(
+            `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/pms_aif_values!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+            {method:'POST', headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+             body: JSON.stringify({values:[['', fund, '', investor, String(value), soaDate]]})}, 6000
+          ).catch(()=>{}); // non-critical
+        }
       }
-    }catch(e){/* non-critical — individual dashboards will still get date via snapshot restore */}
+    }catch(e){ /* non-critical — snapshot col I is the fallback */ }
   }
 }
 
@@ -2929,16 +2951,22 @@ async function applyHqDiff(cardEl){
     done++; setProgress(done < totalItems ? `Saved ${done}/${totalItems}…` : 'Finishing…');
   }
 
-  // Feature B: Also write soaDate + value to pms_aif_values for PMS/AIF updates
-  // so individual dashboards pick it up on next loadFromSheets without workaround
+  // Feature B: Write value + soaDate to pms_aif_values for PMS/AIF holdings.
+  // Now matches by fund name + investor (not the broken holdingId which was a date serial).
   const _pmsAifUpdates = diff.update
     .filter((item,i)=>{
       const chk=cardEl.querySelector(`#hd_upd_${i}`);
-      return chk?.checked && item.as_of_date && (item._existing?.type==='PMS'||item._existing?.type==='AIF');
+      return chk?.checked && (item._existing?.type==='PMS'||item._existing?.type==='AIF');
     })
     .map(item=>{
       const fam=getFamilyConfig(item._detectedFamily);
-      return {sheetId:fam?.sheetId, holdingId:item._existing?.id, value:item._proposedValue, soaDate:item.as_of_date};
+      return {
+        sheetId:  fam?.sheetId,
+        fund:     item._existing?.fund || item._existing?.originalName || item.fund_name || '',
+        investor: item._existing?.investor || '',
+        value:    item._proposedValue,
+        soaDate:  item.as_of_date || '',
+      };
     });
   const _pmsAifDups = diff.duplicate
     .filter((item,i)=>{
@@ -2947,7 +2975,13 @@ async function applyHqDiff(cardEl){
     })
     .map(item=>{
       const fam=getFamilyConfig(item._detectedFamily);
-      return {sheetId:fam?.sheetId, holdingId:item._existing?.id, value:item._existing?.value||item.current_value, soaDate:item.as_of_date};
+      return {
+        sheetId:  fam?.sheetId,
+        fund:     item._existing?.fund || item._existing?.originalName || item.fund_name || '',
+        investor: item._existing?.investor || '',
+        value:    item._existing?.value || item.current_value || 0,
+        soaDate:  item.as_of_date,
+      };
     });
   if(_pmsAifUpdates.length||_pmsAifDups.length){
     hqWritePmsAifSoaDates([..._pmsAifUpdates,..._pmsAifDups], _token).catch(()=>{});

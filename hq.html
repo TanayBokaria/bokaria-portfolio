@@ -1547,19 +1547,44 @@ async function _executeRedemption(btn){
   map[key] = until.toISOString();
   _auditSaveSnooze(map);
 
-  // 2. Optionally write to the family's Sheets redemptions tab
+  // 2. Optionally write to the family's Sheets redemptions tab + signal dashboard reload
   let sheetsOk = true;
   if(withDel){
     const fam = getFamilyConfig(item.family);
     if(fam?.sheetId && _token){
+      const headers = {Authorization:`Bearer ${_token}`,'Content-Type':'application/json'};
       const row = [[item.fund, item.investor, new Date().toISOString().slice(0,10), item.folio||'', item.family]];
+
+      // Step A: ensure the 'redemptions' tab exists — batchUpdate addSheet is idempotent
+      // (it throws "already exists" if the tab is present, which we silently ignore)
+      await fetchWithTimeout(
+        `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}:batchUpdate`,
+        {method:'POST', headers,
+         body: JSON.stringify({requests:[{addSheet:{properties:{title:'redemptions',
+           gridProperties:{rowCount:1000,columnCount:6}}}}]})
+        }, 8000
+      ).catch(()=>{}); // non-critical: throws harmlessly if tab already exists
+
+      // Step B: append the redemption row
       try{
         const r = await fetchWithTimeout(
           `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/redemptions!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-          {method:'POST', headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
-           body: JSON.stringify({values:row})}, 8000);
-        if(!r.ok) sheetsOk = false;
-      }catch(e){ sheetsOk = false; }
+          {method:'POST', headers, body: JSON.stringify({values:row})}, 8000);
+        if(!r.ok){
+          const errText = await r.text().catch(()=>'');
+          console.warn('[redemption] Sheets append failed:', r.status, errText);
+          sheetsOk = false;
+        }
+      }catch(e){ console.warn('[redemption] Sheets append error:', e.message); sheetsOk = false; }
+
+      // Step C: write nav_refresh_ts to config so the family dashboard auto-reloads within 90s
+      // (re-uses the existing HQ→dashboard sync signal from Refresh All NAVs)
+      if(sheetsOk){
+        fetchWithTimeout(
+          `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/config!A30:B30?valueInputOption=RAW`,
+          {method:'PUT', headers, body: JSON.stringify({values:[['nav_refresh_ts', Date.now()]]})}, 6000
+        ).catch(()=>{}); // non-critical
+      }
     } else { sheetsOk = false; }
   }
 
@@ -1575,7 +1600,7 @@ async function _executeRedemption(btn){
   // 4. Replace card with confirmation
   const msg = withDel
     ? sheetsOk
-      ? `✓ <strong>${item.fund}</strong> marked as redeemed and queued for deletion from the ${item.family} dashboard. It will be removed on next sync.`
+      ? `✓ <strong>${item.fund}</strong> marked as redeemed. The ${item.family} dashboard will automatically remove it within 90 seconds — no manual refresh needed.`
       : `✓ <strong>${item.fund}</strong> marked as redeemed in audit. ⚠ Could not write to Sheets — delete the holding from the ${item.family} dashboard manually.`
     : `✓ <strong>${item.fund}</strong> marked as redeemed in the audit permanently.`;
   card.closest('.hq-msg').replaceWith((() => {

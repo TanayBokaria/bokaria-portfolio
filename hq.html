@@ -615,7 +615,7 @@ input{font-family:var(--font);}
 <div class="modal-overlay" id="hqReportModal">
   <div class="hq-modal">
     <h2>Report an Issue</h2>
-    <p>Describe what went wrong. This will be logged to the relevant family's error log Sheet tab and can be viewed by the admin.</p>
+    <p>Describe what went wrong. The report and any attachments will be saved to the Bokaria Dashboard Reports folder in Google Drive.</p>
     <div class="hq-modal-field">
       <label class="hq-modal-label">Which family?</label>
       <select class="hq-modal-input" id="hqReportFamily" style="cursor:pointer">
@@ -631,10 +631,16 @@ input{font-family:var(--font);}
         placeholder="e.g. Priya's Kotak Optimus value update didn't save…"
         style="resize:vertical"></textarea>
     </div>
+    <div class="hq-modal-field">
+      <label class="hq-modal-label">Attach files (optional — screenshots, PDFs, Excel exports)</label>
+      <input type="file" id="hqReportFiles" multiple class="hq-modal-input"
+        style="padding:6px;cursor:pointer"
+        accept="image/*,.pdf,.xlsx,.xls,.csv,.txt">
+    </div>
     <div id="hqReportStatus" class="hq-report-status"></div>
     <div class="hq-modal-actions">
       <button class="hq-modal-ok" onclick="hqSubmitReport()">Submit Report</button>
-      <button class="hq-modal-cancel" onclick="closeModal('hqReportModal')">Cancel</button>
+      <button class="hq-modal-cancel" onclick="closeModal('hqReportModal');document.getElementById('hqReportFiles').value='';">Cancel</button>
     </div>
   </div>
 </div>
@@ -3804,6 +3810,8 @@ async function checkFamilyHealth(family){
 async function hqSubmitReport(){
   const family  = document.getElementById('hqReportFamily')?.value;
   const desc    = document.getElementById('hqReportDesc')?.value?.trim();
+  const filesEl = document.getElementById('hqReportFiles');
+  const files   = filesEl ? Array.from(filesEl.files) : [];
   const statusEl= document.getElementById('hqReportStatus');
 
   if(!desc){ statusEl.style.display='block'; statusEl.style.color='var(--red)';
@@ -3816,27 +3824,104 @@ async function hqSubmitReport(){
     statusEl.textContent='Unknown family.'; return; }
 
   statusEl.style.display='block'; statusEl.style.color='var(--text-muted)';
-  statusEl.textContent='Logging report…';
+  statusEl.textContent='Submitting report…';
 
-  const ts = new Date().toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'});
-  const row = [ts, 'HQ', 'hqReportIssue', '', '', 'manual_report', desc, 'Priya'];
+  const ts         = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+  const folderName = `HQ Issue — ${family} — ${ts}`;
+  const SHARED_FOLDER = '1DsaGJ9jsDIAlqlJ09Z60oLt3wbWA5uyd'; // Bokaria Dashboard Reports (Tanay's Drive)
+
+  let driveLink    = '';
+  let uploadedCount= 0;
+  let failedFiles  = [];
+  let driveError   = '';
+
+  // ── Upload files to shared Drive folder ─────────────────────────────────
+  if(files.length > 0){
+    try{
+      statusEl.textContent = 'Creating Drive folder…';
+      const folderRes = await fetchWithTimeout('https://www.googleapis.com/drive/v3/files', {
+        method:'POST',
+        headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+        body: JSON.stringify({name:folderName, mimeType:'application/vnd.google-apps.folder',
+          parents:[SHARED_FOLDER]})
+      }, 10000);
+      if(!folderRes.ok) throw new Error(`Folder creation failed (HTTP ${folderRes.status})`);
+      const folder = await folderRes.json();
+      const folderId = folder.id;
+      driveLink = `https://drive.google.com/drive/folders/${folderId}`;
+
+      // Upload description.txt
+      const descBlob = new Blob([`HQ Issue Report\n${'='.repeat(60)}\nFamily: ${family}\nTimestamp: ${ts}\n\n${desc}`],{type:'text/plain'});
+      const descForm = new FormData();
+      descForm.append('metadata', new Blob([JSON.stringify({name:'description.txt',parents:[folderId]})],{type:'application/json'}));
+      descForm.append('file', descBlob);
+      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        {method:'POST',headers:{Authorization:`Bearer ${_token}`},body:descForm}).catch(()=>{});
+
+      // Upload each attached file
+      for(const file of files){
+        statusEl.textContent = `Uploading ${file.name}…`;
+        try{
+          const form = new FormData();
+          form.append('metadata', new Blob([JSON.stringify({name:file.name,parents:[folderId]})],{type:'application/json'}));
+          form.append('file', file);
+          const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+            {method:'POST',headers:{Authorization:`Bearer ${_token}`},body:form});
+          if(r.ok) uploadedCount++;
+          else failedFiles.push(file.name);
+        }catch(fe){ failedFiles.push(file.name); }
+      }
+    }catch(de){
+      driveError = de.message.includes('401')||de.message.includes('403')
+        ? 'Drive permission error — reconnect and try again.'
+        : de.message;
+      driveLink = '';
+    }
+  }
+
+  // ── Write to error_log Sheet tab (auto-create tab if missing) ───────────
+  const row = [ts, 'HQ', 'manual_report', '', '', desc,
+    `files:${uploadedCount}/${files.length}${failedFiles.length?' (failed: '+failedFiles.join(',')+'    )':''} | drive:${driveLink}`,
+    'Priya'];
 
   try{
+    // Ensure error_log tab exists
+    await fetchWithTimeout(`https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}:batchUpdate`,
+      {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+       body:JSON.stringify({requests:[{addSheet:{properties:{title:'error_log',
+         gridProperties:{rowCount:5000,columnCount:8}}}}]})},6000).catch(()=>{});
+    // Append row
     const res = await fetchWithTimeout(
       `https://sheets.googleapis.com/v4/spreadsheets/${fam.sheetId}/values/error_log!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-      { method:'POST',
-        headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
-        body: JSON.stringify({values:[row]}) }
-    );
+      {method:'POST',headers:{Authorization:`Bearer ${_token}`,'Content-Type':'application/json'},
+       body:JSON.stringify({values:[row]})}, 8000);
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    statusEl.style.color='var(--green)';
-    statusEl.textContent='✓ Report logged to the ' + family + ' Sheet error_log tab.';
-    setTimeout(()=>{ closeModal('hqReportModal');
-      document.getElementById('hqReportDesc').value=''; statusEl.style.display='none'; }, 2500);
   }catch(e){
     statusEl.style.color='var(--red)';
-    statusEl.textContent='⚠ Failed to log: ' + e.message;
+    statusEl.textContent='⚠ Failed to log to Sheet: ' + e.message; return;
   }
+
+  // ── Success ──────────────────────────────────────────────────────────────
+  if(driveError){
+    statusEl.style.color='var(--accent)';
+    statusEl.textContent=`⚠ Report logged to Sheet, but Drive upload failed: ${driveError}`;
+  } else if(files.length > 0 && failedFiles.length > 0){
+    statusEl.style.color='var(--accent)';
+    statusEl.textContent=`⚠ ${uploadedCount}/${files.length} file(s) uploaded. Issue logged to Sheet.`;
+  } else if(files.length > 0){
+    statusEl.style.color='var(--green)';
+    statusEl.textContent=`✓ Report submitted. ${uploadedCount} file(s) saved to Bokaria Dashboard Reports.`;
+  } else {
+    statusEl.style.color='var(--green)';
+    statusEl.textContent='✓ Issue logged to Sheet. (No files attached.)';
+  }
+  const clean = !driveError && failedFiles.length===0;
+  if(clean) setTimeout(()=>{
+    closeModal('hqReportModal');
+    document.getElementById('hqReportDesc').value='';
+    if(filesEl) filesEl.value='';
+    statusEl.style.display='none';
+  }, 2500);
 }
 
 

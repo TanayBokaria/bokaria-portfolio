@@ -3758,7 +3758,8 @@ async function submitIssueReport() {
         headers: {'Authorization':`Bearer ${activeToken}`,'Content-Type':'application/json'},
         body: JSON.stringify({
           name: folderName,
-          mimeType: 'application/vnd.google-apps.folder'
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: ['1DsaGJ9jsDIAlqlJ09Z60oLt3wbWA5uyd']  // Bokaria Dashboard Reports — owned by Tanay, readable by Claude MCP
         })
       });
       if (folderRes.status === 401 || folderRes.status === 403) {
@@ -3771,7 +3772,8 @@ async function submitIssueReport() {
             headers: {'Authorization':`Bearer ${activeToken}`,'Content-Type':'application/json'},
             body: JSON.stringify({
               name: folderName,
-              mimeType: 'application/vnd.google-apps.folder'
+              mimeType: 'application/vnd.google-apps.folder',
+              parents: ['1DsaGJ9jsDIAlqlJ09Z60oLt3wbWA5uyd']  // Bokaria Dashboard Reports — owned by Tanay, readable by Claude MCP
             })
           });
         }
